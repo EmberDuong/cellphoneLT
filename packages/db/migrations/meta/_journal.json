@@ -15,6 +15,20 @@
       "when": 1776609824986,
       "tag": "0001_fancy_rafael_vega",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778433397723,
+      "tag": "0002_furry_praxagora",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1778775757994,
+      "tag": "0003_steep_thor",
+      "breakpoints": true
     }
   ]
 }

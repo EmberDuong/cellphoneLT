@@ -22,15 +22,15 @@
 
 ## Phased Delivery
 
-| Phase | Scope | Weeks |
-|---|---|---|
-| 1 | Foundation: monorepo, DB schema, storefront, admin CRUD | 1–4 |
-| 2 | AI Product Pipeline: Vision + Gemini + draft review UI | 5–7 |
-| 3 | Repair Service Module: booking, ticketing, IMEI inventory | 8–10 |
-| 4 | Trade-In Valuation: wizard, pricing matrix, appraisal session | 11–13 |
-| 5 | Zalo OA + ZNS integration, SMS failover | 14–15 |
-| 6 | BI Dashboard + SEO (Schema.org, sitemap, local SEO) | 16–18 |
-| 7 | Polish: Core Web Vitals, Docker, CI/CD, security | 19–20 |
+| Phase | Status | Scope | Weeks |
+|---|---|---|---|
+| 1 | ✅ Completed | Foundation: monorepo, DB schema, storefront, admin CRUD | 1–4 |
+| 2 | 🔄 In Progress | AI Product Pipeline: Vision + Gemini + draft review UI | 5–7 |
+| 3 | ⏳ Pending | Repair Service Module: booking, ticketing, IMEI inventory | 8–10 |
+| 4 | ⏳ Pending | Trade-In Valuation: wizard, pricing matrix, appraisal session | 11–13 |
+| 5 | ⏳ Pending | Zalo OA + ZNS integration, SMS failover | 14–15 |
+| 6 | ⏳ Pending | BI Dashboard + SEO (Schema.org, sitemap, local SEO) | 16–18 |
+| 7 | ⏳ Pending | Polish: Core Web Vitals, CI/CD, security | 19–20 |
 
 ---
 
@@ -42,7 +42,6 @@ cellphoneLT/
 ├── pnpm-workspace.yaml
 ├── turbo.json
 ├── .env.example
-├── docker-compose.yml
 │
 ├── packages/
 │   ├── db/

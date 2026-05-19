@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { signOut } from "next-auth/react";
 
 const navGroups = [
   {
@@ -59,7 +62,10 @@ export function AdminSidebar() {
       </nav>
 
       <div style={{ padding: "1rem", borderTop: "1px solid var(--border)" }}>
-        <button style={{ width: "100%", background: "transparent", border: "none", color: "var(--danger)", fontSize: "0.85rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", padding: "0.5rem" }}>
+        <button
+          onClick={() => signOut({ callbackUrl: "/admin/login" })}
+          style={{ width: "100%", background: "transparent", border: "none", color: "var(--danger)", fontSize: "0.85rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", padding: "0.5rem" }}
+        >
           <span>🚪</span> Đăng xuất
         </button>
       </div>

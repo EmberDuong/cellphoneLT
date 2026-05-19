@@ -7,10 +7,11 @@ const client = postgres(process.env.DATABASE_URL!, {
   max: 10,
   idle_timeout: 20,
   connect_timeout: 10,
+  ssl: process.env.NODE_ENV === "production" ? "require" : false,
 });
 
 export const db = drizzle(client, { schema });
 
 // Re-export schema and types for convenience
 export * from "./schema";
-export type { InferInsertModel, InferSelectModel } from "drizzle-orm";
+export * from "drizzle-orm";

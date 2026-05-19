@@ -4,6 +4,6 @@ import { authConfig } from "./lib/auth.config";
 export default NextAuth(authConfig).auth;
 
 export const config = {
-  // Protect all routes starting with /admin
-  matcher: ["/admin/:path*"],
+  matcher: ["/admin/:path*", "/account/:path*"],
 };
+

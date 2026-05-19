@@ -26,7 +26,8 @@ Follow these steps to set up the development environment from scratch.
 Ensure you have the following installed on your machine:
 - **Node.js** (v20 or higher recommended)
 - **pnpm** (install via `npm install -g pnpm`)
-- **Docker Desktop** (Make sure Docker Desktop is open and the Engine is running)
+- **PostgreSQL** (Ensure a local instance is running)
+- **Redis** (Ensure a local instance is running for background jobs)
 
 ### 2. Install Dependencies
 Open your terminal at the root of the project (`cellphoneLT/`) and run:
@@ -42,12 +43,8 @@ cp .env.example .env
 ```
 Ensure your `DATABASE_URL`, `REDIS_URL`, and `AUTH_SECRET` are present. (The defaults in `.env.example` are fine for local development).
 
-### 4. Start Docker Containers
-Turn on the PostgreSQL database and Redis cache by running Docker Compose in the root folder:
-```bash
-docker compose up -d
-```
-*Note: If you run into errors like "The system cannot find the file specified", verify that your Docker Desktop application is fully started and running.*
+### 4. Start Local Services
+Ensure your local PostgreSQL database and Redis cache are running. Update your `.env` file to point to your local instances.
 
 ### 5. Setup Database & Seed Data
 Initialize the database structure and create the default Super Admin user.
@@ -92,7 +89,6 @@ cellphoneLT/
 │   ├── db/                    # Drizzle ORM Schema, Postgres Client & Migrations
 │   ├── shared-types/          # Zod schema definitions (Product, Form validation)
 │   └── ai-pipeline/           # (Pending) BullMQ AI Worker Node.js logic
-├── docker-compose.yml         # Dev environment containers
 ├── pnpm-workspace.yaml        # Workspaces definition
 └── turbo.json                 # Turbo pipeline cache config
 ```

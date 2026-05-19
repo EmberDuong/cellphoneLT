@@ -32,13 +32,22 @@ export const CreateProductSchema = z.object({
   brandId: z.string().uuid().optional(),
   categoryId: z.string().uuid().optional(),
   basePrice: z.number().positive(),
+  minPrice: z.number().positive().optional().nullable(),
+  maxPrice: z.number().positive().optional().nullable(),
   isSerialized: z.boolean().default(false),
   aiSpecs: AiProductSpecSchema.optional(),
   images: z.array(z.string().url()).default([]),
   status: z.enum(["draft", "active", "archived"]).default("draft"),
-});
+}).refine(
+  (data) => !data.minPrice || !data.maxPrice || data.minPrice <= data.maxPrice,
+  {
+    message: "Giá tối thiểu phải nhỏ hơn hoặc bằng giá tối đa",
+    path: ["maxPrice"],
+  }
+);
 
 export type CreateProduct = z.infer<typeof CreateProductSchema>;
+
 
 // ────────────────────────────────────────────────
 // AI Pipeline Job Input

@@ -1,16 +1,9 @@
-import { AdminSidebar } from "@/components/admin/AdminSidebar";
+import { AdminLayoutWrapper } from "./AdminLayoutWrapper";
 
 export default function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return (
-    <div className="admin-layout">
-      <AdminSidebar />
-      <div className="admin-main">
-        {children}
-      </div>
-    </div>
-  );
+  return <AdminLayoutWrapper>{children}</AdminLayoutWrapper>;
 }

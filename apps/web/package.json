@@ -11,25 +11,29 @@
   "dependencies": {
     "@cellphonelt/db": "workspace:*",
     "@cellphonelt/shared-types": "workspace:*",
-    "next": "15.3.1",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "next-auth": "^5.0.0-beta.28",
-    "zod": "^3.24.1",
-    "recharts": "^2.14.1",
-    "lucide-react": "^0.483.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "tailwind-merge": "^3.2.0"
+    "drizzle-orm": "^0.38.4",
+    "framer-motion": "^12.38.0",
+    "lucide-react": "^0.483.0",
+    "next": "15.3.1",
+    "next-auth": "^5.0.0-beta.28",
+    "postgres": "^3.4.5",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "recharts": "^2.14.1",
+    "tailwind-merge": "^3.2.0",
+    "xlsx": "^0.18.5",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.4",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "typescript": "^5.7.3",
-    "tailwindcss": "^4.1.4",
-    "@tailwindcss/postcss": "^4.1.4",
     "eslint": "^9",
-    "eslint-config-next": "15.3.1"
+    "eslint-config-next": "15.3.1",
+    "tailwindcss": "^4.1.4",
+    "typescript": "^5.7.3"
   }
 }
