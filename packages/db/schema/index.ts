@@ -7,3 +7,5 @@ export * from "./products";
 export * from "./inventory";
 export * from "./repair_tickets";
 export * from "./trade_ins";
+export * from "./orders";
+

@@ -1,95 +1,146 @@
 import { notFound } from "next/navigation";
 import Image from "next/image";
-import Link from "next/link";
 import type { Metadata } from "next";
+import { db, products, brands, categories, eq } from "@cellphonelt/db";
+import { AddToCartButtons } from "@/components/storefront/AddToCartButtons";
 
 interface Props {
   params: Promise<{ slug: string }>;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const p = await params;
-  // TODO: Fetch from DB using slug
-  if (!p.slug) return { title: "Không tìm thấy sản phẩm" };
+  const { slug } = await params;
+  const product = await db.query.products.findFirst({
+    where: eq(products.slug, slug),
+  });
+
+  if (!product) {
+    return { title: "Không tìm thấy sản phẩm" };
+  }
+
+  const aiSpecs = product.aiSpecs as any;
   
   return {
-    title: `Sản phẩm ${p.slug}`, // Mock title
-    description: "Chi tiết sản phẩm phụ kiện điện thoại.",
+    title: aiSpecs?.seoTitle || product.name,
+    description: aiSpecs?.metaDescription || `Mua ${product.name} chính hãng tại CellphoneLT.`,
   };
 }
 
-export default async function ProductDetailPage({ params }: Props) {
-  const p = await params;
-  
-  // Mock Data
-  const formatVND = (v: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(v);
-  
+export default async function ProductDetailsPage({ params }: Props) {
+  const { slug } = await params;
+
+  const [product] = await db
+    .select({
+      id: products.id,
+      name: products.name,
+      slug: products.slug,
+      price: products.basePrice,
+      images: products.images,
+      aiSpecs: products.aiSpecs,
+      brand: brands.name,
+      category: categories.name,
+      status: products.status,
+    })
+    .from(products)
+    .leftJoin(brands, eq(products.brandId, brands.id))
+    .leftJoin(categories, eq(products.categoryId, categories.id))
+    .where(eq(products.slug, slug))
+    .limit(1);
+
+  if (!product || product.status !== "active") {
+    notFound();
+  }
+
+  const aiSpecs = product.aiSpecs as {
+    description?: string;
+    features?: string[];
+    specs?: { label: string; value: string }[];
+    compatibleModels?: string[];
+    colors?: string[];
+  } | null;
+
+  const mainImage = product.images?.[0];
+
   return (
     <main className="section-inner" style={{ padding: "3rem 1.5rem" }}>
-      {/* Breadcrumb */}
-      <nav style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "2rem" }}>
-        <Link href="/" className="hover:text-white">Trang chủ</Link>
-        <span style={{ margin: "0 0.5rem" }}>/</span>
-        <Link href="/products" className="hover:text-white">Phụ kiện</Link>
-        <span style={{ margin: "0 0.5rem" }}>/</span>
-        <span style={{ color: "var(--text)" }}>{p.slug}</span>
-      </nav>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "3rem" }}>
-        {/* Gallery */}
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", aspectRatio: "1/1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "5rem" }}>
-          📱
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "3rem", marginBottom: "4rem" }}>
+        {/* Product Images */}
+        <div style={{ background: "var(--surface)", borderRadius: "var(--radius)", padding: "2rem", display: "flex", justifyContent: "center", alignItems: "center", border: "1px solid var(--border)", minHeight: "400px", position: "relative" }}>
+          {mainImage ? (
+            <Image src={mainImage} alt={product.name} fill style={{ objectFit: "contain", padding: "2rem" }} />
+          ) : (
+            <div style={{ fontSize: "5rem" }}>📱</div>
+          )}
         </div>
 
-        {/* Info */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-          <div>
-            <div style={{ color: "var(--primary)", fontWeight: 700, fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: 1, marginBottom: "0.5rem" }}>
-              Thương hiệu Apple
-            </div>
-            <h1 style={{ fontSize: "2rem", fontWeight: 800, color: "var(--text)", lineHeight: 1.2, marginBottom: "1rem" }}>
-              Ốp lưng iPhone 15 Pro Max Silicon MagSafe
-            </h1>
-            <div style={{ fontSize: "1.8rem", fontWeight: 800, color: "var(--accent)" }}>
-              {formatVND(350000)}
-            </div>
+        {/* Product Info */}
+        <div>
+          <div style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "0.5rem", textTransform: "uppercase", letterSpacing: "1px", fontWeight: 600 }}>
+            {product.brand || "Phụ kiện"} • {product.category || "Khác"}
+          </div>
+          <h1 style={{ fontSize: "2.5rem", fontWeight: 800, marginBottom: "1rem", lineHeight: 1.2 }}>
+            {product.name}
+          </h1>
+          
+          <div style={{ fontSize: "2rem", fontWeight: 700, color: "var(--primary)", marginBottom: "2rem" }}>
+            {Number(product.price).toLocaleString("vi-VN")}đ
           </div>
 
-          <div style={{ background: "var(--surface-2)", padding: "1.5rem", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
-            <h3 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "0.75rem" }}>Tính năng nổi bật</h3>
-            <ul style={{ listStyle: "disc", paddingLeft: "1.25rem", color: "var(--text-muted)", fontSize: "0.95rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              <li>Ngoại hình sang trọng, màu sắc thanh lịch</li>
-              <li>Tương thích sạc không dây MagSafe ổn định</li>
-              <li>Chất liệu silicone cao cấp, chống trơn trượt</li>
-              <li>Bảo vệ toàn diện cụm camera và màn hình</li>
-            </ul>
-          </div>
+          <AddToCartButtons
+            productId={product.id}
+            productSlug={product.slug}
+            productName={product.name}
+            productPrice={Number(product.price)}
+            productBrand={product.brand ?? undefined}
+          />
 
-          <div style={{ display: "flex", gap: "1rem", marginTop: "1rem" }}>
-            <button className="btn-primary" style={{ flex: 1, fontSize: "1.1rem", padding: "1rem" }}>
-              Mua ngay
-            </button>
-            <button className="btn-outline" style={{ width: "3.5rem", padding: 0 }}>
-              ❤️
-            </button>
-          </div>
+          {/* AI Specs Features */}
+          {aiSpecs?.features && aiSpecs.features.length > 0 && (
+            <div style={{ marginBottom: "2rem" }}>
+              <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "1rem" }}>Đặc điểm nổi bật</h3>
+              <ul style={{ listStyle: "disc", paddingLeft: "1.5rem", display: "flex", flexDirection: "column", gap: "0.5rem", color: "var(--text-muted)" }}>
+                {aiSpecs.features.map((f, i) => (
+                  <li key={i}>{f}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
 
-          <div style={{ marginTop: "2rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "1rem", fontSize: "0.9rem", color: "var(--text-muted)" }}>
-              <span style={{ fontSize: "1.5rem" }}>🛡️</span>
-              <div>
-                <strong style={{ display: "block", color: "var(--text)" }}>Bảo hành 12 tháng</strong>
-                Lỗi 1 đổi 1 tại cửa hàng
-              </div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "1rem", fontSize: "0.9rem", color: "var(--text-muted)" }}>
-              <span style={{ fontSize: "1.5rem" }}>🚚</span>
-              <div>
-                <strong style={{ display: "block", color: "var(--text)" }}>Giao hàng siêu tốc</strong>
-                Nhận hàng trong 2h tại nội thành
-              </div>
-            </div>
+      {/* Details Tabs */}
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "3rem" }}>
+        <div>
+          <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "1.5rem", borderBottom: "2px solid var(--border)", paddingBottom: "0.5rem" }}>
+            Mô tả sản phẩm
+          </h2>
+          <div style={{ color: "var(--text-muted)", lineHeight: 1.8, fontSize: "1.05rem" }}>
+            {aiSpecs?.description ? (
+              <p>{aiSpecs.description}</p>
+            ) : (
+              <p>Chưa có mô tả chi tiết cho sản phẩm này.</p>
+            )}
           </div>
+        </div>
+
+        <div>
+          <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "1.5rem", borderBottom: "2px solid var(--border)", paddingBottom: "0.5rem" }}>
+            Thông số kỹ thuật
+          </h2>
+          {aiSpecs?.specs && aiSpecs.specs.length > 0 ? (
+            <div style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", overflow: "hidden" }}>
+              {aiSpecs.specs.map((s, i) => (
+                <div key={i} style={{ display: "flex", padding: "0.8rem 1rem", background: i % 2 === 0 ? "var(--surface)" : "transparent", borderBottom: i === aiSpecs.specs!.length - 1 ? "none" : "1px solid var(--border)" }}>
+                  <div style={{ width: "40%", fontWeight: 600, color: "var(--text-muted)" }}>{s.label}</div>
+                  <div style={{ width: "60%" }}>{s.value}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ padding: "1rem", border: "1px dashed var(--border)", borderRadius: "var(--radius-sm)", color: "var(--text-muted)", textAlign: "center" }}>
+              Đang cập nhật...
+            </div>
+          )}
         </div>
       </div>
     </main>

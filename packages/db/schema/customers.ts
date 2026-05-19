@@ -4,6 +4,7 @@ import {
   varchar,
   integer,
   decimal,
+  boolean,
   timestamp,
 } from "drizzle-orm/pg-core";
 
@@ -15,7 +16,11 @@ export const customers = pgTable("customers", {
 
   fullName: varchar("full_name", { length: 255 }).notNull(),
   phoneNumber: varchar("phone_number", { length: 20 }).unique(),
-  email: varchar("email", { length: 255 }),
+  email: varchar("email", { length: 255 }).unique(),
+
+  // Storefront self-registration auth (nullable for admin-created records)
+  passwordHash: varchar("password_hash", { length: 255 }),
+  emailVerified: boolean("email_verified").default(false).notNull(),
 
   /**
    * Zalo User ID — used to send ZNS transactional messages.

@@ -1,23 +1,53 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { ProductCard } from "@/components/storefront/ProductCard";
+import { db, products, brands, categories, eq, desc, and } from "@cellphonelt/db";
 
 export const metadata: Metadata = {
   title: "Sản phẩm",
   description: "Trang bị cho dế yêu với ốp lưng, kính cường lực, cáp sạc và sạc dự phòng chính hãng.",
 };
 
-const mockProducts = [
-  { id: "1", name: "Ốp lưng iPhone 15 Pro Max - MagSafe Silicone", slug: "op-lung-iphone-15-pro-max-magsafe", price: 350000, brand: "Apple", isNew: true },
-  { id: "2", name: "Cáp sạc USB-C to Lightning 1.2m Anker PowerLine", slug: "cap-sac-anker-powerline", price: 290000, brand: "Anker", isNew: false },
-  { id: "3", name: "Pin dự phòng Xiaomi 33W Fast Charge 20000mAh", slug: "pin-du-phong-xiaomi-33w", price: 780000, brand: "Xiaomi", isNew: true },
-  { id: "4", name: "Kính cường lực Samsung Galaxy S25 Ultra Full Glue", slug: "cuong-luc-samsung-s25-ultra", price: 150000, brand: "Samsung", isNew: false },
-  { id: "5", name: "Sạc nhanh UGREEN Nexode 65W GaN Type-C", slug: "sac-nhanh-ugreen-nexode-65w", price: 650000, brand: "Ugreen", isNew: false },
-  { id: "6", name: "Tai nghe Bluetooth Sony WF-1000XM5 Xanh", slug: "tai-nghe-sony-wf-1000xm5", price: 5990000, brand: "Sony", isNew: false },
-  { id: "7", name: "Ốp UAG Pathfinder trong suốt S24 Ultra", slug: "op-uag-s24-ultra", price: 850000, brand: "UAG", isNew: true },
-  { id: "8", name: "Sạc dự phòng Magsafe Baseus 10000mAh", slug: "pin-magsafe-baseus", price: 450000, brand: "Baseus", isNew: false },
-];
+export default async function ProductsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const params = await searchParams;
+  const brandFilter = params.brand as string | undefined;
+  const categoryFilter = params.category as string | undefined;
 
-export default function ProductsPage() {
+  // 1. Fetch categories & brands for sidebar
+  const allCategories = await db.select().from(categories).orderBy(categories.sortOrder);
+  const allBrands = await db.select().from(brands).orderBy(brands.name);
+
+  // 2. Build where clause
+  const conditions = [eq(products.status, "active")];
+  
+  if (brandFilter) {
+    const b = allBrands.find((br) => br.slug === brandFilter);
+    if (b) conditions.push(eq(products.brandId, b.id));
+  }
+  
+  if (categoryFilter) {
+    const c = allCategories.find((cat) => cat.slug === categoryFilter);
+    if (c) conditions.push(eq(products.categoryId, c.id));
+  }
+
+  // 3. Fetch products
+  const productList = await db
+    .select({
+      id: products.id,
+      name: products.name,
+      slug: products.slug,
+      price: products.basePrice,
+      brand: brands.name,
+    })
+    .from(products)
+    .leftJoin(brands, eq(products.brandId, brands.id))
+    .where(and(...conditions))
+    .orderBy(desc(products.createdAt));
+
   return (
     <main className="section-inner" style={{ padding: "3rem 1.5rem" }}>
       <header style={{ marginBottom: "2rem" }}>
@@ -26,29 +56,41 @@ export default function ProductsPage() {
       </header>
 
       <div style={{ display: "flex", gap: "2rem", alignItems: "flex-start" }}>
-        {/* Sidebar Filters (Mock) */}
+        {/* Sidebar Filters */}
         <aside style={{ width: "220px", flexShrink: 0, paddingRight: "1rem", borderRight: "1px solid var(--border)" }}>
           <div style={{ marginBottom: "2rem" }}>
             <h3 style={{ fontSize: "0.9rem", fontWeight: 700, marginBottom: "1rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Danh mục</h3>
             <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "0.6rem", fontSize: "0.95rem" }}>
-              <li style={{ color: "var(--primary)", fontWeight: 600 }}>Tất cả sản phẩm</li>
-              <li>Ốp lưng - Bao da</li>
-              <li>Cáp - Sạc</li>
-              <li>Pin dự phòng</li>
-              <li>Miếng dán màn hình</li>
-              <li>Thiết bị âm thanh</li>
+              <li>
+                <Link href={`/products${brandFilter ? `?brand=${brandFilter}` : ''}`} style={{ color: !categoryFilter ? "var(--primary)" : "inherit", fontWeight: !categoryFilter ? 600 : 400 }}>
+                  Tất cả sản phẩm
+                </Link>
+              </li>
+              {allCategories.map((c) => (
+                <li key={c.id}>
+                  <Link href={`/products?category=${c.slug}${brandFilter ? `&brand=${brandFilter}` : ''}`} style={{ color: categoryFilter === c.slug ? "var(--primary)" : "inherit", fontWeight: categoryFilter === c.slug ? 600 : 400 }}>
+                    {c.name}
+                  </Link>
+                </li>
+              ))}
             </ul>
           </div>
 
           <div>
             <h3 style={{ fontSize: "0.9rem", fontWeight: 700, marginBottom: "1rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Thương hiệu</h3>
             <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "0.6rem", fontSize: "0.95rem" }}>
-              <li>Apple</li>
-              <li>Samsung</li>
-              <li>Anker</li>
-              <li>Ugreen</li>
-              <li>Spigen</li>
-              <li>Baseus</li>
+              <li>
+                <Link href={`/products${categoryFilter ? `?category=${categoryFilter}` : ''}`} style={{ color: !brandFilter ? "var(--primary)" : "inherit", fontWeight: !brandFilter ? 600 : 400 }}>
+                  Tất cả thương hiệu
+                </Link>
+              </li>
+              {allBrands.map((b) => (
+                <li key={b.id}>
+                  <Link href={`/products?brand=${b.slug}${categoryFilter ? `&category=${categoryFilter}` : ''}`} style={{ color: brandFilter === b.slug ? "var(--primary)" : "inherit", fontWeight: brandFilter === b.slug ? 600 : 400 }}>
+                    {b.name}
+                  </Link>
+                </li>
+              ))}
             </ul>
           </div>
         </aside>
@@ -56,20 +98,32 @@ export default function ProductsPage() {
         {/* Product Grid */}
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1.5rem", alignItems: "center" }}>
-            <span style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>Hiển thị {mockProducts.length} sản phẩm</span>
+            <span style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>Hiển thị {productList.length} sản phẩm</span>
             <select style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)", padding: "0.4rem 0.8rem", borderRadius: "var(--radius-sm)", fontSize: "0.9rem" }}>
               <option>Mới nhất</option>
               <option>Giá tăng dần</option>
               <option>Giá giảm dần</option>
-              <option>Bán chạy nhất</option>
             </select>
           </div>
           
-          <div className="product-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", marginTop: 0 }}>
-            {mockProducts.map((p) => (
-              <ProductCard key={p.id} {...p} />
-            ))}
-          </div>
+          {productList.length > 0 ? (
+            <div className="product-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", marginTop: 0 }}>
+              {productList.map((p) => (
+                <ProductCard 
+                  key={p.id} 
+                  id={p.id}
+                  name={p.name}
+                  slug={p.slug}
+                  price={Number(p.price) || 0}
+                  brand={p.brand || undefined}
+                />
+              ))}
+            </div>
+          ) : (
+            <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)", border: "1px dashed var(--border)", borderRadius: "var(--radius)" }}>
+              Không tìm thấy sản phẩm nào phù hợp với bộ lọc.
+            </div>
+          )}
         </div>
       </div>
     </main>

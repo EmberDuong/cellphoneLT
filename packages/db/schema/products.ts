@@ -36,6 +36,8 @@ export const products = pgTable("products", {
 
   // Pricing (VND — stored as integer-precision decimal)
   basePrice: decimal("base_price", { precision: 14, scale: 0 }),
+  minPrice: decimal("min_price", { precision: 14, scale: 0 }),
+  maxPrice: decimal("max_price", { precision: 14, scale: 0 }),
 
   /**
    * AI-generated product data stored as JSONB.
