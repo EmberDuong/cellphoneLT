@@ -8,6 +8,8 @@
     "db:generate": "turbo run db:generate",
     "db:migrate": "turbo run db:migrate",
     "db:studio": "turbo run db:studio",
+    "worker:dev": "pnpm --filter @cellphonelt/worker dev",
+    "worker:start": "pnpm --filter @cellphonelt/worker start",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\" --ignore-path .gitignore"
   },
   "devDependencies": {

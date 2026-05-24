@@ -29,6 +29,13 @@
       "when": 1778775757994,
       "tag": "0003_steep_thor",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1779417304005,
+      "tag": "0004_broken_barracuda",
+      "breakpoints": true
     }
   ]
 }

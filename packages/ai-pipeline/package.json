@@ -1,0 +1,21 @@
+{
+  "name": "@cellphonelt/ai-pipeline",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./index.ts",
+  "scripts": {
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cellphonelt/db": "workspace:*",
+    "@cellphonelt/shared-types": "workspace:*",
+    "@google-cloud/vision": "^4.3.2",
+    "@google/generative-ai": "^0.21.0",
+    "bullmq": "^5.51.1",
+    "cloudinary": "^2.5.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

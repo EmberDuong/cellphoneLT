@@ -56,12 +56,12 @@ export default function DashboardCharts() {
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "1.5rem", marginBottom: "2rem" }}>
         
         {/* Revenue Chart */}
-        <div className="card" style={{ padding: "1.5rem", background: "var(--card-bg, #fff)", borderRadius: "8px", border: "1px solid var(--border-color, #eaeaea)" }}>
-          <h2 style={{ fontSize: "1.2rem", fontWeight: 600, marginBottom: "1rem" }}>Doanh thu & Số đơn hàng (7 ngày qua)</h2>
+        <div className="card" style={{ padding: "1.5rem", background: "var(--surface)", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)" }}>
+          <h2 style={{ fontSize: "1.2rem", fontWeight: 600, marginBottom: "1rem", color: "var(--text)" }}>Doanh thu & Số đơn hàng (7 ngày qua)</h2>
           <div style={{ height: 300, width: "100%" }}>
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={data.revenueData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-light)" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "var(--text-muted)" }} />
                 <YAxis 
                   yAxisId="left"
@@ -78,15 +78,16 @@ export default function DashboardCharts() {
                   tick={{ fontSize: 12, fill: "var(--text-muted)" }}
                 />
                 <Tooltip 
-                  contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 6px rgba(0,0,0,0.1)" }}
+                  contentStyle={{ background: "var(--surface-2)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", boxShadow: "var(--shadow-glow)", color: "var(--text)" }}
+                  itemStyle={{ color: "var(--text)" }}
                   formatter={(value: number, name: string) => {
                     if (name === "total") return [`${value.toLocaleString('vi-VN')}đ`, 'Doanh thu'];
                     if (name === "orders") return [value, 'Đơn hàng'];
                     return [value, name];
                   }}
                 />
-                <Legend />
-                <Bar yAxisId="right" dataKey="orders" name="Số đơn hàng" fill="#e2e8f0" radius={[4, 4, 0, 0]} barSize={40} />
+                <Legend wrapperStyle={{ color: "var(--text-muted)" }} />
+                <Bar yAxisId="right" dataKey="orders" name="Số đơn hàng" fill="var(--accent)" radius={[4, 4, 0, 0]} barSize={40} />
                 <Line yAxisId="left" type="monotone" dataKey="total" name="Doanh thu" stroke="var(--primary)" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
               </ComposedChart>
             </ResponsiveContainer>
@@ -95,17 +96,18 @@ export default function DashboardCharts() {
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr", gridTemplateRows: "1fr 1fr", gap: "1.5rem" }}>
           {/* Top Selling Products Bar Chart */}
-          <div className="card" style={{ padding: "1.5rem", background: "var(--card-bg, #fff)", borderRadius: "8px", border: "1px solid var(--border-color, #eaeaea)" }}>
-            <h2 style={{ fontSize: "1.2rem", fontWeight: 600, marginBottom: "1rem" }}>Top sản phẩm bán chạy</h2>
+          <div className="card" style={{ padding: "1.5rem", background: "var(--surface)", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)" }}>
+            <h2 style={{ fontSize: "1.2rem", fontWeight: 600, marginBottom: "1rem", color: "var(--text)" }}>Top sản phẩm bán chạy</h2>
             <div style={{ height: 250, width: "100%" }}>
               {data.topSellingData?.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart layout="vertical" data={data.topSellingData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#eee" />
+                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="var(--border-light)" />
                     <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "var(--text-muted)" }} />
                     <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "var(--text-muted)" }} width={100} />
                     <Tooltip 
-                      contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 6px rgba(0,0,0,0.1)" }}
+                      contentStyle={{ background: "var(--surface-2)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", boxShadow: "var(--shadow-glow)", color: "var(--text)" }}
+                      itemStyle={{ color: "var(--text)" }}
                       formatter={(value: number) => [value, 'Đã bán']}
                     />
                     <Bar dataKey="quantity" fill="var(--primary)" radius={[0, 4, 4, 0]} barSize={15} />
@@ -120,8 +122,8 @@ export default function DashboardCharts() {
           </div>
 
           {/* Repairs Pie Chart */}
-          <div className="card" style={{ padding: "1.5rem", background: "var(--card-bg, #fff)", borderRadius: "8px", border: "1px solid var(--border-color, #eaeaea)" }}>
-            <h2 style={{ fontSize: "1.2rem", fontWeight: 600, marginBottom: "1rem" }}>Trạng thái sửa chữa</h2>
+          <div className="card" style={{ padding: "1.5rem", background: "var(--surface)", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)" }}>
+            <h2 style={{ fontSize: "1.2rem", fontWeight: 600, marginBottom: "1rem", color: "var(--text)" }}>Trạng thái sửa chữa</h2>
             <div style={{ height: 250, width: "100%" }}>
               {data.repairData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
@@ -140,7 +142,8 @@ export default function DashboardCharts() {
                       ))}
                     </Pie>
                     <Tooltip 
-                      contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 6px rgba(0,0,0,0.1)" }}
+                      contentStyle={{ background: "var(--surface-2)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", boxShadow: "var(--shadow-glow)", color: "var(--text)" }}
+                      itemStyle={{ color: "var(--text)" }}
                     />
                   </PieChart>
                 </ResponsiveContainer>

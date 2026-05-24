@@ -23,6 +23,16 @@
     "db:studio": {
       "cache": false,
       "persistent": true
+    },
+    "worker:dev": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["^build"]
+    },
+    "worker:start": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["^build"]
     }
   }
 }
