@@ -3,6 +3,19 @@
 import Link from "next/link";
 import { useActionState } from "react";
 import { updateProductAction } from "../../actions";
+import { Sparkles, Tag, ListChecks, Settings2, CheckCircle2 } from "lucide-react";
+
+type AiSpec = {
+  seoTitle?: string;
+  metaDescription?: string;
+  description?: string;
+  features?: string[];
+  specs?: { label: string; value: string }[];
+  tags?: string[];
+  compatibleModels?: string[];
+  colors?: string[];
+  material?: string;
+};
 
 export default function EditProductForm({ 
   product, 
@@ -16,6 +29,9 @@ export default function EditProductForm({
   const updateActionWithId = updateProductAction.bind(null, product.id);
   const [state, formAction, isPending] = useActionState(updateActionWithId, { error: null, details: {} as any });
 
+  const aiSpecs: AiSpec | null = product.aiSpecs ?? null;
+  const isDraft = product.status === "draft";
+
   return (
     <>
       <header className="admin-topbar">
@@ -25,9 +41,120 @@ export default function EditProductForm({
           </Link>
           <h1 className="admin-topbar-title">Sửa sản phẩm</h1>
         </div>
+        {isDraft && (
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.3rem 0.9rem", borderRadius: "99px", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#f59e0b", fontSize: "0.8rem", fontWeight: 600 }}>
+            <Sparkles size={13} />
+            Bản nháp AI
+          </div>
+        )}
       </header>
 
-      <main className="admin-content" style={{ maxWidth: 860, margin: "0 auto" }}>
+      <main className="admin-content" style={{ maxWidth: 960, margin: "0 auto" }}>
+
+        {/* ── AI Specs Review Panel (only for AI-generated drafts) ─────────── */}
+        {isDraft && aiSpecs && (
+          <div className="ai-specs-panel">
+            <div className="ai-specs-panel-header">
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <Sparkles size={16} style={{ color: "var(--primary)" }} />
+                <span style={{ fontWeight: 700, fontSize: "1rem" }}>Nội dung AI đã tạo</span>
+              </div>
+              <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginTop: "0.25rem" }}>
+                Kiểm tra và chỉnh sửa bên dưới, sau đó đổi trạng thái sang <strong>Đang bán</strong> để xuất bản.
+              </p>
+            </div>
+
+            <div className="ai-specs-grid">
+              {/* SEO */}
+              <div className="ai-specs-block">
+                <div className="ai-specs-block-title">
+                  <CheckCircle2 size={13} /> SEO Title
+                </div>
+                <p className="ai-specs-value">{aiSpecs.seoTitle}</p>
+              </div>
+
+              <div className="ai-specs-block">
+                <div className="ai-specs-block-title">
+                  <CheckCircle2 size={13} /> Meta Description
+                </div>
+                <p className="ai-specs-value">{aiSpecs.metaDescription}</p>
+              </div>
+
+              {/* Description */}
+              {aiSpecs.description && (
+                <div className="ai-specs-block ai-specs-block--full">
+                  <div className="ai-specs-block-title">
+                    <ListChecks size={13} /> Mô tả sản phẩm
+                  </div>
+                  <p className="ai-specs-value" style={{ whiteSpace: "pre-wrap", lineHeight: 1.7 }}>
+                    {aiSpecs.description}
+                  </p>
+                </div>
+              )}
+
+              {/* Features */}
+              {aiSpecs.features && aiSpecs.features.length > 0 && (
+                <div className="ai-specs-block">
+                  <div className="ai-specs-block-title">
+                    <CheckCircle2 size={13} /> Điểm nổi bật
+                  </div>
+                  <ul className="ai-specs-list">
+                    {aiSpecs.features.map((f, i) => (
+                      <li key={i}>✓ {f}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Specs table */}
+              {aiSpecs.specs && aiSpecs.specs.length > 0 && (
+                <div className="ai-specs-block">
+                  <div className="ai-specs-block-title">
+                    <Settings2 size={13} /> Thông số kỹ thuật
+                  </div>
+                  <div className="ai-specs-table">
+                    {aiSpecs.specs.map((s, i) => (
+                      <div key={i} className="ai-specs-table-row">
+                        <span className="ai-specs-table-label">{s.label}</span>
+                        <span className="ai-specs-table-value">{s.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Tags */}
+              {aiSpecs.tags && aiSpecs.tags.length > 0 && (
+                <div className="ai-specs-block ai-specs-block--full">
+                  <div className="ai-specs-block-title">
+                    <Tag size={13} /> Tags SEO
+                  </div>
+                  <div className="ai-specs-tags">
+                    {aiSpecs.tags.map((tag, i) => (
+                      <span key={i} className="ai-tag">#{tag}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Compatible models */}
+              {aiSpecs.compatibleModels && aiSpecs.compatibleModels.length > 0 && (
+                <div className="ai-specs-block ai-specs-block--full">
+                  <div className="ai-specs-block-title">
+                    <CheckCircle2 size={13} /> Tương thích với
+                  </div>
+                  <div className="ai-specs-tags">
+                    {aiSpecs.compatibleModels.map((m, i) => (
+                      <span key={i} className="ai-tag ai-tag--compat">{m}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Edit Form ─────────────────────────────────────────────────────── */}
         <div className="form-card">
           <h2 className="form-card-title">
             <span style={{ fontSize: "1.1rem" }}>✏️</span>
@@ -190,6 +317,11 @@ export default function EditProductForm({
                 <option value="active">Đang bán (Active)</option>
                 <option value="archived">Đã lưu trữ (Archived)</option>
               </select>
+              {isDraft && (
+                <p className="form-hint" style={{ color: "var(--warning)" }}>
+                  💡 Chọn <strong>Đang bán</strong> để xuất bản sản phẩm AI này lên storefront.
+                </p>
+              )}
             </div>
 
             {/* Submit */}
@@ -200,7 +332,7 @@ export default function EditProductForm({
                 style={{ flex: 1 }}
                 disabled={isPending}
               >
-                {isPending ? "⏳ Đang lưu..." : "✓ Lưu thay đổi"}
+                {isPending ? "⏳ Đang lưu..." : isDraft ? "✓ Lưu & Xuất bản" : "✓ Lưu thay đổi"}
               </button>
               <Link
                 href="/admin/products"

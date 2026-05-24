@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { SessionProvider } from "next-auth/react";
+import ConditionalChatWidget from "@/components/ConditionalChatWidget";
 
 const inter = Inter({ subsets: ["latin", "vietnamese"] });
 
@@ -25,7 +26,11 @@ export default function RootLayout({
   return (
     <html lang="vi">
       <body className={inter.className}>
-        <SessionProvider>{children}</SessionProvider>
+        <SessionProvider>
+          {children}
+          {/* Only show customer chat on storefront, not on /admin routes */}
+          <ConditionalChatWidget />
+        </SessionProvider>
       </body>
     </html>
   );
