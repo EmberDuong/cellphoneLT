@@ -1,13 +1,13 @@
 "use server";
 
-import { db, repairTickets, eq } from "@cellphonelt/db";
+import { RepairTicket, TicketPart } from "@cellphonelt/db";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { CreateRepairBookingSchema } from "@cellphonelt/shared-types";
 
 export async function updateRepairStatusAction(ticketId: string, newStatus: string) {
   try {
-    await db.update(repairTickets).set({ status: newStatus as any } as any).where(eq(repairTickets.id, ticketId));
+    await RepairTicket.updateOne({ _id: ticketId }, { $set: { status: newStatus as any } }, { runValidators: true });
     revalidatePath(`/admin/repairs/${ticketId}`);
     revalidatePath("/admin/repairs");
     return { success: true };
@@ -37,7 +37,7 @@ export async function createRepairAction(prevState: any, formData: FormData) {
       };
     }
 
-    await db.insert(repairTickets).values({
+    await RepairTicket.create({
       ...parsed.data,
       status: "intake" as const,
       priority: (parsed.data.priority ?? "normal") as "normal" | "urgent" | "vip",
@@ -54,7 +54,9 @@ export async function createRepairAction(prevState: any, formData: FormData) {
 
 export async function deleteRepairAction(id: string) {
   try {
-    await db.delete(repairTickets).where(eq(repairTickets.id, id));
+    await RepairTicket.deleteOne({ _id: id });
+    // ticket_parts.ticket_id was ON DELETE CASCADE in Postgres.
+    await TicketPart.deleteMany({ ticketId: id });
     revalidatePath("/admin/repairs");
     return { success: true };
   } catch (error: any) {

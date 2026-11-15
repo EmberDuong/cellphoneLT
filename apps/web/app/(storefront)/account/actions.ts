@@ -1,6 +1,6 @@
 "use server";
 
-import { db, eq, customers } from "@cellphonelt/db";
+import { Customer } from "@cellphonelt/db";
 import bcrypt from "bcryptjs";
 import { signIn } from "@/lib/auth";
 
@@ -25,9 +25,7 @@ export async function registerCustomer(formData: FormData): Promise<RegisterResu
   }
 
   // Check if email already registered
-  const existing = await db.query.customers.findFirst({
-    where: eq(customers.email, email),
-  });
+  const existing = await Customer.findOne({ email }).lean();
 
   if (existing) {
     return { success: false, error: "Email này đã được đăng ký. Vui lòng đăng nhập." };
@@ -35,7 +33,7 @@ export async function registerCustomer(formData: FormData): Promise<RegisterResu
 
   const passwordHash = await bcrypt.hash(password, 12);
 
-  await (db.insert(customers) as any).values({
+  await Customer.create({
     fullName,
     phoneNumber: phoneNumber || null,
     email,

@@ -1,23 +1,29 @@
 import type { Metadata } from "next";
-import { db, orders, customers, eq, desc } from "@cellphonelt/db";
+import { Order, Customer } from "@cellphonelt/db";
 import { SalesDashboardClient } from "./SalesDashboardClient";
 
 export const metadata: Metadata = { title: "Đơn hàng" };
 export const dynamic = "force-dynamic";
 
 export default async function AdminOrdersPage() {
-  const allOrders = await db
-    .select({
-      id: orders.id,
-      customerName: customers.fullName,
-      totalAmount: orders.totalAmount,
-      status: orders.status,
-      paymentStatus: orders.paymentStatus,
-      createdAt: orders.createdAt,
-    })
-    .from(orders)
-    .leftJoin(customers, eq(orders.customerId, customers.id))
-    .orderBy(desc(orders.createdAt));
+  const orderDocs = await Order.find({})
+    .select("customerId totalAmount status paymentStatus createdAt")
+    .sort({ createdAt: -1 })
+    .lean();
+  const customerIds = [...new Set(orderDocs.map((o) => o.customerId).filter(Boolean))];
+  const customerDocs = customerIds.length
+    ? await Customer.find({ _id: { $in: customerIds } }).select("fullName").lean()
+    : [];
+  const customerNameById = new Map(customerDocs.map((c) => [c.id, c.fullName]));
+  const allOrders = orderDocs.map((o) => ({
+    id: o.id,
+    customerName: customerNameById.get(o.customerId) ?? null,
+    // SalesDashboardClient reads totalAmount as a decimal string (old Postgres shape).
+    totalAmount: String(o.totalAmount),
+    status: o.status,
+    paymentStatus: o.paymentStatus,
+    createdAt: o.createdAt,
+  }));
 
   return (
     <>

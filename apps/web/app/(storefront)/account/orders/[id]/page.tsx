@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { db, eq, orders, orderItems } from "@cellphonelt/db";
+import { Order, OrderItem } from "@cellphonelt/db";
 import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
@@ -34,11 +34,11 @@ export default async function OrderDetailPage({
 
   const customerId = (session.user as any).id as string;
 
-  const [order] = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
+  const order = await Order.findOne({ _id: id }).lean();
 
   if (!order || order.customerId !== customerId) notFound();
 
-  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, id));
+  const items = await OrderItem.find({ orderId: id }).lean();
 
   const shippingAddr = order.shippingAddress as any;
   const cancelledOrDelivered = order.status === "cancelled" || order.status === "delivered";

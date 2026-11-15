@@ -2,7 +2,7 @@
 
 **cellphoneLT** is an AI-powered e-commerce and multi-service management platform tailored for phone accessory stores, repair ticketing, and automated used-device trade-ins. 
 
-The system leverages Next.js 15, PostgreSQL (via Drizzle ORM), BullMQ, and Google Cloud Vertex AI / Gemini to completely automate SEO-friendly product cataloging and operations.
+The system leverages Next.js 15, MongoDB (via Mongoose), BullMQ, and Google Cloud Vertex AI / Gemini to completely automate SEO-friendly product cataloging and operations.
 
 ---
 
@@ -10,8 +10,8 @@ The system leverages Next.js 15, PostgreSQL (via Drizzle ORM), BullMQ, and Googl
 - **Frontend & App Framework:** Next.js 15 (App Router), React 19
 - **Design System:** Tailwind CSS v4 + Custom Dark Mode UI Components
 - **Language:** TypeScript
-- **Database:** PostgreSQL 16
-- **ORM:** Drizzle ORM
+- **Database:** MongoDB 7+
+- **ODM:** Mongoose 8
 - **Authentication:** NextAuth.js v5 (beta) + bcryptjs
 - **Background Jobs:** BullMQ + Redis 7
 - **Monorepo Manager:** pnpm workspaces + Turborepo
@@ -26,8 +26,8 @@ Follow these steps to set up the development environment from scratch.
 Ensure you have the following installed on your machine:
 - **Node.js** (v20 or higher recommended)
 - **pnpm** (install via `npm install -g pnpm`)
-- **PostgreSQL** (Ensure a local instance is running)
-- **Redis** (Ensure a local instance is running for background jobs)
+- **MongoDB** (a local instance on `mongodb://127.0.0.1:27017`, or a MongoDB Atlas URI)
+- **Redis** *(optional)* — only needed for the AI product-generation worker (BullMQ)
 
 ### 2. Install Dependencies
 Open your terminal at the root of the project (`cellphoneLT/`) and run:
@@ -41,22 +41,20 @@ You can quickly copy the template if you haven't already:
 ```bash
 cp .env.example .env
 ```
-Ensure your `DATABASE_URL`, `REDIS_URL`, and `AUTH_SECRET` are present. (The defaults in `.env.example` are fine for local development).
+Ensure `MONGODB_URI` and `AUTH_SECRET` are set (generate a secret with `npx auth secret` or any random string). `OPENAI_API_KEY` enables the chatbots, `REDIS_URL` + Google/Cloudinary keys enable the AI worker. The single root `.env` is loaded by both Next.js and the scripts.
 
 ### 4. Start Local Services
-Ensure your local PostgreSQL database and Redis cache are running. Update your `.env` file to point to your local instances.
+Ensure MongoDB is running (on Windows it usually runs as the `MongoDB` service). Start Redis only if you want to use the AI worker.
 
 ### 5. Setup Database & Seed Data
-Initialize the database structure and create the default Super Admin user.
-Run this single command from your terminal:
+MongoDB needs no migrations — collections are created on first write. Create the indexes and seed the default Super Admin, brands, categories and sample products:
 ```bash
-pnpm --filter @cellphonelt/db db:migrate && npx tsx --env-file=.env packages/db/scripts/seed.ts
+pnpm db:indexes
 ```
-*(If on Windows and the `&&` command rejects, run them separately):*
-```powershell
-pnpm --filter @cellphonelt/db db:migrate
-npx tsx --env-file=.env packages/db/scripts/seed.ts
+```bash
+pnpm db:seed
 ```
+Both commands are idempotent and safe to re-run.
 
 ### 6. Start the Next.js Server
 Spins up the web frontend, storefront, and admin panel with Turbopack enabled:
@@ -86,9 +84,10 @@ cellphoneLT/
 ├── apps/
 │   └── web/                   # Main Next.js 15 Website (Storefront + Admin)
 ├── packages/
-│   ├── db/                    # Drizzle ORM Schema, Postgres Client & Migrations
+│   ├── db/                    # Mongoose models, MongoDB connection, seed scripts
 │   ├── shared-types/          # Zod schema definitions (Product, Form validation)
-│   └── ai-pipeline/           # (Pending) BullMQ AI Worker Node.js logic
+│   └── ai-pipeline/           # Cloudinary + Google Vision + Gemini product pipeline
+├── apps/worker/               # BullMQ worker that runs the AI pipeline
 ├── pnpm-workspace.yaml        # Workspaces definition
 └── turbo.json                 # Turbo pipeline cache config
 ```

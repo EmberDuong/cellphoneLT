@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db, tradeInAppraisals, customers, eq } from "@cellphonelt/db";
+import { TradeInAppraisal, Customer } from "@cellphonelt/db";
 import { StatusBadge } from "@/components/admin/ui/StatusBadge";
 import TradeInDetails from "./TradeInDetails";
 
@@ -10,13 +10,11 @@ export default async function AdminTradeInDetailsPage({ params }: { params: Prom
   const { id } = await params;
 
   // 1. Fetch Trade-In
-  const tradeInArray = await db.select().from(tradeInAppraisals).where(eq(tradeInAppraisals.id, id));
-  if (tradeInArray.length === 0) return notFound();
-  const tradeIn = tradeInArray[0];
+  const tradeIn = await TradeInAppraisal.findOne({ _id: id }).lean();
+  if (!tradeIn) return notFound();
 
   // 2. Fetch Customer
-  const customerArray = await db.select().from(customers).where(eq(customers.id, tradeIn.customerId));
-  const customer = customerArray.length > 0 ? customerArray[0] : null;
+  const customer = await Customer.findOne({ _id: tradeIn.customerId }).select("-passwordHash").lean();
 
   return (
     <>

@@ -7,24 +7,31 @@ import * as bcrypt from "bcryptjs";
 async function main() {
   console.log("Seeding admin account...");
   
-  const { db, eq, staff } = await import("@cellphonelt/db");
+  const { Staff, disconnectDB } = await import("@cellphonelt/db");
 
   const email = "admin@cellphonelt.com";
   const plainPassword = "admin";
   const passwordHash = await bcrypt.hash(plainPassword, 10);
 
   try {
-    const existing = await db.query.staff.findFirst({ where: eq(staff.email, email) });
-    if (existing) {
+    // Upsert by email: only inserts when no staff with this email exists
+    // (an existing account is left untouched, as before).
+    const result = await Staff.updateOne(
+      { email },
+      {
+        $setOnInsert: {
+          fullName: "Super Admin",
+          email,
+          passwordHash,
+          role: "admin",
+          isActive: true,
+        },
+      },
+      { upsert: true }
+    );
+    if (result.upsertedCount === 0) {
        console.log("Account already exists. Skipping.");
     } else {
-      await db.insert(staff).values({
-        fullName: "Super Admin",
-        email,
-        passwordHash,
-        role: "admin",
-        isActive: true,
-      } as any);
       console.log(`Admin account created!`);
     }
 
@@ -33,6 +40,7 @@ async function main() {
   } catch (err) {
     console.error("Error creating admin account:", err);
   } finally {
+    await disconnectDB();
     process.exit(0);
   }
 }

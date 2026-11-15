@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 };
 export const dynamic = "force-dynamic";
 
-import { db, products, brands, eq, desc } from "@cellphonelt/db";
+import { Product, Brand } from "@cellphonelt/db";
 
 const trustItems = [
   {
@@ -54,19 +54,23 @@ const brands_marquee = [
 ];
 
 export default async function HomePage() {
-  const featuredProducts = await db
-    .select({
-      id: products.id,
-      name: products.name,
-      slug: products.slug,
-      price: products.basePrice,
-      brand: brands.name,
-    })
-    .from(products)
-    .leftJoin(brands, eq(products.brandId, brands.id))
-    .where(eq(products.status, "active"))
-    .orderBy(desc(products.createdAt))
-    .limit(4);
+  const featuredDocs = await Product.find({ status: "active" })
+    .select("name slug basePrice brandId")
+    .sort({ createdAt: -1 })
+    .limit(4)
+    .lean();
+  const featuredBrandIds = [...new Set(featuredDocs.map((p) => p.brandId).filter(Boolean))];
+  const featuredBrands = featuredBrandIds.length
+    ? await Brand.find({ _id: { $in: featuredBrandIds } }).select("name").lean()
+    : [];
+  const featuredBrandName = new Map(featuredBrands.map((b) => [b.id, b.name]));
+  const featuredProducts = featuredDocs.map((p) => ({
+    id: p.id,
+    name: p.name,
+    slug: p.slug,
+    price: p.basePrice ?? null,
+    brand: (p.brandId && featuredBrandName.get(p.brandId)) || null,
+  }));
 
   return (
     <>

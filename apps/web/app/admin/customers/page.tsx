@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { db, customers } from "@cellphonelt/db";
+import { Customer } from "@cellphonelt/db";
 import Link from "next/link";
 import DeleteCustomerButton from "./DeleteCustomerButton";
 
@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "Khách hàng" };
 export const dynamic = "force-dynamic";
 
 export default async function AdminCustomersPage() {
-  const allCustomers = await db.select().from(customers).orderBy(customers.createdAt);
+  const allCustomers = await Customer.find({}).sort({ createdAt: 1 }).lean();
 
   return (
     <>

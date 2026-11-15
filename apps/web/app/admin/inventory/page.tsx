@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { db, inventoryItems, products, eq } from "@cellphonelt/db";
+import { InventoryItem, Product } from "@cellphonelt/db";
 import { DataTable } from "@/components/admin/ui/DataTable";
 import { StatusBadge } from "@/components/admin/ui/StatusBadge";
 
@@ -8,18 +8,23 @@ export const metadata: Metadata = { title: "Kho IMEI" };
 export const dynamic = "force-dynamic";
 
 export default async function AdminInventoryPage() {
-  const items = await db
-    .select({
-      id: inventoryItems.id,
-      productName: products.name,
-      imeiSerial: inventoryItems.imeiSerial,
-      quantity: inventoryItems.quantity,
-      conditionGrade: inventoryItems.conditionGrade,
-      stockStatus: inventoryItems.stockStatus,
-    })
-    .from(inventoryItems)
-    .leftJoin(products, eq(inventoryItems.productId, products.id))
-    .orderBy(inventoryItems.createdAt);
+  const itemDocs = await InventoryItem.find({})
+    .select("productId imeiSerial quantity conditionGrade stockStatus")
+    .sort({ createdAt: 1 })
+    .lean();
+  const productIds = [...new Set(itemDocs.map((i) => i.productId).filter(Boolean))];
+  const productDocs = productIds.length
+    ? await Product.find({ _id: { $in: productIds } }).select("name").lean()
+    : [];
+  const productNameById = new Map(productDocs.map((p) => [p.id, p.name]));
+  const items = itemDocs.map((i) => ({
+    id: i.id,
+    productName: productNameById.get(i.productId) ?? null,
+    imeiSerial: i.imeiSerial ?? null,
+    quantity: i.quantity,
+    conditionGrade: i.conditionGrade,
+    stockStatus: i.stockStatus,
+  }));
 
   return (
     <>

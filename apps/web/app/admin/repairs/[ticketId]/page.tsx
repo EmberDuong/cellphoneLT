@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db, repairTickets, customers, eq } from "@cellphonelt/db";
+import { RepairTicket, Customer } from "@cellphonelt/db";
 import { StatusBadge } from "@/components/admin/ui/StatusBadge";
 import RepairDetails from "./RepairDetails";
 
@@ -10,13 +10,11 @@ export default async function AdminRepairDetailsPage({ params }: { params: Promi
   const { ticketId } = await params;
 
   // 1. Fetch Ticket
-  const ticketArray = await db.select().from(repairTickets).where(eq(repairTickets.id, ticketId));
-  if (ticketArray.length === 0) return notFound();
-  const ticket = ticketArray[0];
+  const ticket = await RepairTicket.findOne({ _id: ticketId }).lean();
+  if (!ticket) return notFound();
 
   // 2. Fetch Customer
-  const customerArray = await db.select().from(customers).where(eq(customers.id, ticket.customerId));
-  const customer = customerArray.length > 0 ? customerArray[0] : null;
+  const customer = await Customer.findOne({ _id: ticket.customerId }).select("-passwordHash").lean();
 
   return (
     <>

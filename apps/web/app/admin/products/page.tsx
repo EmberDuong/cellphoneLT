@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { db, products, brands, eq } from "@cellphonelt/db";
+import { Product, Brand } from "@cellphonelt/db";
 import { DataTable } from "@/components/admin/ui/DataTable";
 import QuickStatusToggle from "./QuickStatusToggle";
 
@@ -8,20 +8,25 @@ export const metadata: Metadata = { title: "Quản lý sản phẩm" };
 export const dynamic = "force-dynamic";
 
 export default async function AdminProductsPage() {
-  const allProducts = await db
-    .select({
-      id: products.id,
-      name: products.name,
-      sku: products.sku,
-      basePrice: products.basePrice,
-      minPrice: products.minPrice,
-      maxPrice: products.maxPrice,
-      status: products.status,
-      brandName: brands.name,
-    })
-    .from(products)
-    .leftJoin(brands, eq(products.brandId, brands.id))
-    .orderBy(products.createdAt);
+  const productDocs = await Product.find({})
+    .select("name sku basePrice minPrice maxPrice status brandId")
+    .sort({ createdAt: 1 })
+    .lean();
+  const brandIds = [...new Set(productDocs.map((p) => p.brandId).filter(Boolean))];
+  const brandDocs = brandIds.length
+    ? await Brand.find({ _id: { $in: brandIds } }).select("name").lean()
+    : [];
+  const brandNameById = new Map(brandDocs.map((b) => [b.id, b.name]));
+  const allProducts = productDocs.map((p) => ({
+    id: p.id,
+    name: p.name,
+    sku: p.sku ?? null,
+    basePrice: p.basePrice ?? null,
+    minPrice: p.minPrice ?? null,
+    maxPrice: p.maxPrice ?? null,
+    status: p.status,
+    brandName: (p.brandId && brandNameById.get(p.brandId)) || null,
+  }));
 
   return (
     <>

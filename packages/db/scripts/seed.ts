@@ -1,111 +1,87 @@
-import { join } from "path";
-import dotenv from "dotenv";
-
-// Load environment variables FIRST before any other imports
-dotenv.config({ path: join(__dirname, "../../../.env") });
-
-import { staff, brands, categories } from "../schema/lookup";
-import { products } from "../schema/products";
+/**
+ * Seed MongoDB with the default Super Admin, brands, categories and a few products.
+ * Safe to run multiple times (upserts by email / slug).
+ *
+ *   pnpm --filter @cellphonelt/db db:seed
+ */
 import bcrypt from "bcryptjs";
+import { connectDB, disconnectDB, Staff, Brand, Category, Product } from "../index";
 
-async function main() {
-  // Use dynamic import so process.env.DATABASE_URL is evaluated AFTER dotenv.config
-  const { db } = await import("../index");
-  
-  console.log("Seeding data...");
-  
-  const superAdminEmail = "admin@cellphonelt.com";
-  const rawPassword = "password123";
-  
-  const passwordHash = await bcrypt.hash(rawPassword, 10);
-  
-  try {
-    await db.insert(staff).values({
-      fullName: "Super Admin",
-      email: superAdminEmail,
-      passwordHash: passwordHash,
-      role: "superadmin",
-      isActive: true,
-    } as any).onConflictDoNothing({ target: staff.email });
-    
-    console.log("✅ Super Admin seed successful.");
-  } catch (err: any) {
-    console.error("❌ Failed to seed admin:", err);
+async function upsertBySlug(model: any, docs: Record<string, any>[]) {
+  for (const doc of docs) {
+    await model.updateOne({ slug: doc.slug }, { $setOnInsert: doc }, { upsert: true });
   }
-
-  // Seed Brands
-  try {
-    await db.insert(brands).values([
-      { name: "Apple", slug: "apple" },
-      { name: "Samsung", slug: "samsung" },
-      { name: "Anker", slug: "anker" },
-      { name: "UAG", slug: "uag" },
-    ] as any).onConflictDoNothing({ target: brands.slug });
-    console.log("✅ Brands seeded.");
-  } catch (err: any) {
-    console.error("❌ Failed to seed brands:", err);
-  }
-
-  // Seed Categories
-  try {
-    await db.insert(categories).values([
-      { name: "Điện thoại", slug: "dien-thoai", sortOrder: 1 },
-      { name: "Ốp lưng", slug: "op-lung", sortOrder: 2 },
-      { name: "Cáp sạc", slug: "cap-sac", sortOrder: 3 },
-    ] as any).onConflictDoNothing({ target: categories.slug });
-    console.log("✅ Categories seeded.");
-  } catch (err: any) {
-    console.error("❌ Failed to seed categories:", err);
-  }
-
-  // Fetch created references
-  const allBrands = await db.select().from(brands);
-  const allCategories = await db.select().from(categories);
-
-  const appleId = allBrands.find(b => b.slug === "apple")?.id;
-  const ankerId = allBrands.find(b => b.slug === "anker")?.id;
-  const uagId = allBrands.find(b => b.slug === "uag")?.id;
-
-  const caseCategoryId = allCategories.find(c => c.slug === "op-lung")?.id;
-  const cableCategoryId = allCategories.find(c => c.slug === "cap-sac")?.id;
-
-  // Seed Products
-  try {
-    await db.insert(products).values([
-      {
-        name: "Ốp lưng iPhone 15 Pro Max",
-        slug: "op-lung-iphone-15-pro-max",
-        sku: "IP15PM-OP-01",
-        brandId: appleId,
-        categoryId: caseCategoryId,
-        basePrice: "350000",
-        status: "active",
-      },
-      {
-        name: "Cáp sạc USB-C Anker",
-        slug: "cap-sac-usb-c-anker",
-        sku: "AK-CBL-02",
-        brandId: ankerId,
-        categoryId: cableCategoryId,
-        basePrice: "290000",
-        status: "active",
-      },
-      {
-        name: "[Bản nháp AI] Ốp UAG Pathfinder",
-        slug: "op-uag-pathfinder-draft",
-        sku: "UAG-PATH-03",
-        brandId: uagId,
-        categoryId: caseCategoryId,
-        basePrice: "850000",
-        status: "draft",
-      }
-    ] as any).onConflictDoNothing({ target: products.slug });
-    console.log("✅ Products seeded.");
-  } catch (err: any) {
-    console.error("❌ Failed to seed products:", err);
-  }
-  
-  process.exit(0);
 }
 
-main();
+async function main() {
+  await connectDB();
+  console.log("Seeding data...");
+
+  // Indexes first so unique constraints exist before inserts
+  await Promise.all([Staff, Brand, Category, Product].map((m: any) => m.syncIndexes()));
+
+  const email = "admin@cellphonelt.com";
+  const passwordHash = await bcrypt.hash("password123", 10);
+  await Staff.updateOne(
+    { email },
+    { $setOnInsert: { fullName: "Super Admin", email, passwordHash, role: "superadmin", isActive: true } },
+    { upsert: true }
+  );
+  console.log("✅ Super Admin seeded.");
+
+  await upsertBySlug(Brand, [
+    { name: "Apple", slug: "apple" },
+    { name: "Samsung", slug: "samsung" },
+    { name: "Anker", slug: "anker" },
+    { name: "UAG", slug: "uag" },
+  ]);
+  console.log("✅ Brands seeded.");
+
+  await upsertBySlug(Category, [
+    { name: "Điện thoại", slug: "dien-thoai", sortOrder: 1 },
+    { name: "Ốp lưng", slug: "op-lung", sortOrder: 2 },
+    { name: "Cáp sạc", slug: "cap-sac", sortOrder: 3 },
+  ]);
+  console.log("✅ Categories seeded.");
+
+  const brandId = async (slug: string) => (await Brand.findOne({ slug }).lean())?.id ?? null;
+  const categoryId = async (slug: string) => (await Category.findOne({ slug }).lean())?.id ?? null;
+
+  await upsertBySlug(Product, [
+    {
+      name: "Ốp lưng iPhone 15 Pro Max",
+      slug: "op-lung-iphone-15-pro-max",
+      sku: "IP15PM-OP-01",
+      brandId: await brandId("apple"),
+      categoryId: await categoryId("op-lung"),
+      basePrice: 350000,
+      status: "active",
+    },
+    {
+      name: "Cáp sạc USB-C Anker",
+      slug: "cap-sac-usb-c-anker",
+      sku: "AK-CBL-02",
+      brandId: await brandId("anker"),
+      categoryId: await categoryId("cap-sac"),
+      basePrice: 290000,
+      status: "active",
+    },
+    {
+      name: "[Bản nháp AI] Ốp UAG Pathfinder",
+      slug: "op-uag-pathfinder-draft",
+      sku: "UAG-PATH-03",
+      brandId: await brandId("uag"),
+      categoryId: await categoryId("op-lung"),
+      basePrice: 850000,
+      status: "draft",
+    },
+  ]);
+  console.log("✅ Products seeded.");
+}
+
+main()
+  .catch((err) => {
+    console.error("❌ Seed failed:", err);
+    process.exitCode = 1;
+  })
+  .finally(() => disconnectDB());

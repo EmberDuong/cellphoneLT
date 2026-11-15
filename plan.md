@@ -7,8 +7,8 @@
 | Frontend | Next.js 15 (App Router) |
 | Styling | Tailwind CSS v4 + shadcn/ui |
 | Backend | API Routes (Next.js) + Node.js worker |
-| ORM | Drizzle ORM |
-| Database | PostgreSQL 16 |
+| ODM | Mongoose 8 |
+| Database | MongoDB 7+ |
 | Auth | NextAuth.js v5 |
 | AI – Vision | Google Cloud Vision API |
 | AI – LLM | Gemini 1.5 Pro (Structured JSON Output) |
@@ -45,14 +45,13 @@ cellphoneLT/
 │
 ├── packages/
 │   ├── db/
-│   │   ├── schema/
+│   │   ├── models/
 │   │   │   ├── products.ts
 │   │   │   ├── inventory.ts
 │   │   │   ├── repair_tickets.ts
 │   │   │   ├── trade_ins.ts
 │   │   │   ├── customers.ts
 │   │   │   └── ticket_parts.ts
-│   │   ├── migrations/
 │   │   ├── index.ts
 │   │   └── package.json
 │   │
@@ -139,10 +138,10 @@ cellphoneLT/
 
 | Entity | Key Fields |
 |---|---|
-| `products` | id, name, slug, sku, brand_id, category_id, base_price, ai_specs (JSONB), is_serialized, status |
+| `products` | id, name, slug, sku, brand_id, category_id, base_price, ai_specs (Mixed), is_serialized, status |
 | `inventory_items` | id, product_id, imei_serial, quantity, condition_grade, stock_status, trade_in_id |
 | `repair_tickets` | id, customer_id, device_model, reported_issue, technician_id, status, estimated_cost, device_photos |
-| `trade_in_appraisals` | id, customer_id, device_brand, device_model, physical_condition (JSONB), ai_offered_price, status |
+| `trade_in_appraisals` | id, customer_id, device_brand, device_model, physical_condition (Mixed), ai_offered_price, status |
 | `customers` | id, full_name, phone_number, email, zalo_oa_id, loyalty_points, total_lifetime_spend |
 | `ticket_parts` | id, ticket_id, item_id, quantity, warranty_days, cost_applied |
 

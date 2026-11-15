@@ -1,6 +1,6 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import { db, eq, staff, customers } from "@cellphonelt/db";
+import { Staff, Customer } from "@cellphonelt/db";
 import bcrypt from "bcryptjs";
 import { authConfig } from "./auth.config";
 
@@ -18,9 +18,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        const user = await db.query.staff.findFirst({
-          where: eq(staff.email, credentials.email as string),
-        });
+        const user = await Staff.findOne({ email: String(credentials.email) }).lean();
 
         if (!user || !user.isActive) return null;
 
@@ -50,9 +48,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        const customer = await db.query.customers.findFirst({
-          where: eq(customers.email, credentials.email as string),
-        });
+        const customer = await Customer.findOne({ email: String(credentials.email) }).lean();
 
         if (!customer || !customer.passwordHash) return null;
 

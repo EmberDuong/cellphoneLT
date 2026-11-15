@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db, orders, repairTickets, inventoryItems, eq, desc, gte } from "@cellphonelt/db";
+import { Order, OrderItem, RepairTicket, InventoryItem } from "@cellphonelt/db";
 
 export async function GET() {
   try {
@@ -7,13 +7,9 @@ export async function GET() {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     
-    const recentOrders = await db
-      .select({
-        createdAt: orders.createdAt,
-        totalAmount: orders.totalAmount,
-      })
-      .from(orders)
-      .where(gte(orders.createdAt, sevenDaysAgo));
+    const recentOrders = await Order.find({ createdAt: { $gte: sevenDaysAgo } })
+      .select("createdAt totalAmount")
+      .lean();
 
     // Aggregate revenue by date
     const revenueMap = new Map<string, { total: number, orders: number }>();
@@ -44,8 +40,7 @@ export async function GET() {
     }));
 
     // Calculate total products sold and top selling products
-    const { orderItems } = await import("@cellphonelt/db");
-    const soldItems = await db.select({ quantity: orderItems.quantity, productName: orderItems.productName }).from(orderItems);
+    const soldItems = await OrderItem.find().select("quantity productName").lean();
     const totalProductsSold = soldItems.reduce((acc, curr) => acc + curr.quantity, 0);
 
     const productSalesMap = new Map<string, number>();
@@ -59,7 +54,7 @@ export async function GET() {
       .slice(0, 5);
 
     // 2. Repair ticket statuses
-    const allRepairs = await db.select({ status: repairTickets.status }).from(repairTickets);
+    const allRepairs = await RepairTicket.find().select("status").lean();
     const statusCounts = allRepairs.reduce((acc: any, curr) => {
       acc[curr.status] = (acc[curr.status] || 0) + 1;
       return acc;
@@ -71,15 +66,13 @@ export async function GET() {
     }));
 
     // 3. Low stock alerts
-    const lowStock = await db
-      .select({
-        id: inventoryItems.id,
-        productId: inventoryItems.productId,
-        quantity: inventoryItems.quantity,
-      })
-      .from(inventoryItems)
-      .orderBy(inventoryItems.quantity)
-      .limit(5);
+    const lowStock = (
+      await InventoryItem.find()
+        .select("productId quantity")
+        .sort({ quantity: 1 })
+        .limit(5)
+        .lean()
+    ).map((i) => ({ id: i.id, productId: i.productId, quantity: i.quantity }));
 
     return NextResponse.json({
       revenueData,

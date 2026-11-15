@@ -5,12 +5,11 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
-    "db:generate": "turbo run db:generate",
-    "db:migrate": "turbo run db:migrate",
-    "db:studio": "turbo run db:studio",
     "worker:dev": "pnpm --filter @cellphonelt/worker dev",
     "worker:start": "pnpm --filter @cellphonelt/worker start",
-    "format": "prettier --write \"**/*.{ts,tsx,md,json}\" --ignore-path .gitignore"
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\" --ignore-path .gitignore",
+    "db:seed": "pnpm --filter @cellphonelt/db db:seed",
+    "db:indexes": "pnpm --filter @cellphonelt/db db:indexes"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",

@@ -1,17 +1,27 @@
-import postgres from "postgres";
-import { drizzle } from "drizzle-orm/postgres-js";
-import * as schema from "./schema";
+import { connectDB } from "./connection";
 
-// Connection pool — reused across the whole app
-const client = postgres(process.env.DATABASE_URL!, {
-  max: 10,
-  idle_timeout: 20,
-  connect_timeout: 10,
-  ssl: process.env.NODE_ENV === "production" ? "require" : false,
+// Open (or reuse) the MongoDB connection as soon as the package is imported.
+// Mongoose buffers queries until it is ready, so models can be used directly.
+connectDB().catch(() => {
+  /* logged in connectDB; queries will surface the error */
 });
 
-export const db = drizzle(client, { schema });
+export { connectDB, disconnectDB } from "./connection";
+export { plain } from "./plugins";
+export * from "./models";
+export { default as mongoose } from "mongoose";
 
-// Re-export schema and types for convenience
-export * from "./schema";
-export * from "drizzle-orm";
+/** Escape user input before using it in a `$regex` (replacement for SQL ILIKE). */
+export function escapeRegex(input: string) {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Case-insensitive "contains" match, like SQL `ILIKE '%term%'`. */
+export function ilike(term: string) {
+  return { $regex: escapeRegex(term), $options: "i" };
+}
+
+/** Case-insensitive exact match, like SQL `ILIKE 'term'`. */
+export function iequals(term: string) {
+  return { $regex: `^${escapeRegex(term)}$`, $options: "i" };
+}

@@ -2,9 +2,9 @@ import { openai } from "@ai-sdk/openai";
 import { streamText, tool } from "ai";
 import { z } from "zod";
 import {
-  db, products, categories, brands, customers,
-  orders, orderItems, inventoryItems,
-  ilike, and, gte, lte, eq, sql,
+  Product, Category, Brand, Customer,
+  Order, OrderItem, InventoryItem,
+  ilike, plain,
 } from "@cellphonelt/db";
 import { sendOrderConfirmationEmail } from "@/lib/email";
 
@@ -40,37 +40,51 @@ Nhiệm vụ của bạn:
           limit: z.number().optional().default(5).describe("Số lượng kết quả tối đa"),
         }),
         execute: async ({ keyword, categoryName, brandName, minPrice, maxPrice, limit }) => {
-          const conditions: any[] = [eq(products.status, "active")];
-          if (keyword) conditions.push(ilike(products.name, `%${keyword}%`));
-          if (minPrice) conditions.push(gte(products.basePrice, minPrice.toString()));
-          if (maxPrice) conditions.push(lte(products.basePrice, maxPrice.toString()));
+          const filter: Record<string, any> = { status: "active" };
+          if (keyword) filter.name = ilike(keyword);
+          if (minPrice || maxPrice) {
+            filter.basePrice = {};
+            if (minPrice) filter.basePrice.$gte = minPrice;
+            if (maxPrice) filter.basePrice.$lte = maxPrice;
+          }
 
           if (categoryName) {
-            const cat = await db.query.categories.findFirst({ where: ilike(categories.name, `%${categoryName}%`) });
-            if (cat) conditions.push(eq(products.categoryId, cat.id));
+            const cat = await Category.findOne({ name: ilike(categoryName) }).lean();
+            if (cat) filter.categoryId = cat.id;
           }
           if (brandName) {
-            const br = await db.query.brands.findFirst({ where: ilike(brands.name, `%${brandName}%`) });
-            if (br) conditions.push(eq(products.brandId, br.id));
+            const br = await Brand.findOne({ name: ilike(brandName) }).lean();
+            if (br) filter.brandId = br.id;
           }
 
-          // Check stock per product
-          const rows = await db.select({
-            id: products.id,
-            name: products.name,
-            basePrice: products.basePrice,
-            slug: products.slug,
-            brandName: brands.name,
-            categoryName: categories.name,
-            availableStock: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryItems.stockStatus} = 'available' THEN ${inventoryItems.quantity} ELSE 0 END), 0)`,
-          })
-            .from(products)
-            .leftJoin(brands, eq(products.brandId, brands.id))
-            .leftJoin(categories, eq(products.categoryId, categories.id))
-            .leftJoin(inventoryItems, eq(inventoryItems.productId, products.id))
-            .where(and(...conditions))
-            .groupBy(products.id, brands.name, categories.name)
-            .limit(limit ?? 5);
+          // Check stock per product (sum of quantity over "available" inventory items)
+          const rows = plain<any[]>(await Product.aggregate([
+            { $match: filter },
+            { $limit: limit ?? 5 },
+            { $lookup: { from: Brand.collection.name, localField: "brandId", foreignField: "_id", as: "brand" } },
+            { $lookup: { from: Category.collection.name, localField: "categoryId", foreignField: "_id", as: "category" } },
+            {
+              $lookup: {
+                from: InventoryItem.collection.name,
+                let: { pid: "$_id" },
+                pipeline: [
+                  { $match: { $expr: { $and: [{ $eq: ["$productId", "$$pid"] }, { $eq: ["$stockStatus", "available"] }] } } },
+                  { $group: { _id: null, total: { $sum: "$quantity" } } },
+                ],
+                as: "stock",
+              },
+            },
+            {
+              $project: {
+                name: 1,
+                basePrice: 1,
+                slug: 1,
+                brandName: { $ifNull: [{ $arrayElemAt: ["$brand.name", 0] }, null] },
+                categoryName: { $ifNull: [{ $arrayElemAt: ["$category.name", 0] }, null] },
+                availableStock: { $ifNull: [{ $arrayElemAt: ["$stock.total", 0] }, 0] },
+              },
+            },
+          ]));
 
           return rows.map((p) => ({
             id: p.id,
@@ -102,14 +116,10 @@ Nhiệm vụ của bạn:
         }),
         execute: async ({ productId, productName, quantity, unitPrice, customerName, customerEmail, customerPhone, address, city, paymentMethod, note }) => {
           // 1. Check inventory availability
-          const stockRows = await db.select({
-            totalAvailable: sql<number>`COALESCE(SUM(${inventoryItems.quantity}), 0)`,
-          })
-            .from(inventoryItems)
-            .where(and(
-              eq(inventoryItems.productId, productId),
-              eq(inventoryItems.stockStatus, "available"),
-            ));
+          const stockRows = await InventoryItem.aggregate([
+            { $match: { productId, stockStatus: "available" } },
+            { $group: { _id: null, totalAvailable: { $sum: "$quantity" } } },
+          ]);
 
           const totalAvailable = Number(stockRows[0]?.totalAvailable ?? 0);
 
@@ -125,57 +135,50 @@ Nhiệm vụ của bạn:
           const totalAmount = unitPrice * quantity;
 
           // 2. Find or create customer
-          let customer = await db.query.customers.findFirst({
-            where: eq(customers.email, customerEmail),
-          });
+          let customer: { id: string } | null = await Customer.findOne({ email: customerEmail }).lean();
 
           if (!customer) {
-            const [newCustomer] = await db.insert(customers).values({
+            const newCustomer = await Customer.create({
               fullName: customerName,
               email: customerEmail,
               phoneNumber: customerPhone,
-            } as any).returning();
-            customer = newCustomer;
+            });
+            customer = { id: newCustomer.id };
           }
 
           // 3. Create order
-          const [newOrder] = await db.insert(orders).values({
+          const newOrder = await Order.create({
             customerId: customer.id,
-            totalAmount: totalAmount.toString(),
+            totalAmount,
             shippingAddress: { fullName: customerName, phoneNumber: customerPhone, address, city, note },
             paymentMethod: paymentMethod as "cod" | "bank_transfer",
             paymentStatus: "pending",
             status: "pending",
-          } as any).returning();
+          });
 
           // 4. Create order item
-          await db.insert(orderItems).values({
+          await OrderItem.create({
             orderId: newOrder.id,
             productId,
             productName,
-            unitPrice: unitPrice.toString(),
+            unitPrice,
             quantity,
-            subtotal: totalAmount.toString(),
-          } as any);
+            subtotal: totalAmount,
+          });
 
           // 5. Deduct from inventory (FIFO — deduct from first available batch)
           let remaining = quantity;
-          const inventoryBatches = await db.select()
-            .from(inventoryItems)
-            .where(and(eq(inventoryItems.productId, productId), eq(inventoryItems.stockStatus, "available")))
-            .orderBy(inventoryItems.createdAt);
+          const inventoryBatches = await InventoryItem.find({ productId, stockStatus: "available" })
+            .sort({ createdAt: 1 })
+            .lean();
 
           for (const batch of inventoryBatches) {
             if (remaining <= 0) break;
             if (batch.quantity <= remaining) {
-              await db.update(inventoryItems)
-                .set(({ stockStatus: "sold", quantity: 0, updatedAt: new Date() }) as any)
-                .where(eq(inventoryItems.id, batch.id));
+              await InventoryItem.updateOne({ _id: batch.id }, { $set: { stockStatus: "sold", quantity: 0 } });
               remaining -= batch.quantity;
             } else {
-              await db.update(inventoryItems)
-                .set(({ quantity: batch.quantity - remaining, updatedAt: new Date() }) as any)
-                .where(eq(inventoryItems.id, batch.id));
+              await InventoryItem.updateOne({ _id: batch.id }, { $set: { quantity: batch.quantity - remaining } });
               remaining = 0;
             }
           }

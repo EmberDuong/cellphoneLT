@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { db, tradeInAppraisals, customers, eq } from "@cellphonelt/db";
+import { TradeInAppraisal, Customer } from "@cellphonelt/db";
 import { DataTable } from "@/components/admin/ui/DataTable";
 import { StatusBadge } from "@/components/admin/ui/StatusBadge";
 
@@ -8,18 +8,23 @@ export const metadata: Metadata = { title: "Thu mua máy" };
 export const dynamic = "force-dynamic";
 
 export default async function AdminTradeInsPage() {
-  const tradeIns = await db
-    .select({
-      id: tradeInAppraisals.id,
-      customerName: customers.fullName,
-      deviceBrand: tradeInAppraisals.deviceBrand,
-      deviceModel: tradeInAppraisals.deviceModel,
-      aiOfferedPrice: tradeInAppraisals.aiOfferedPrice,
-      status: tradeInAppraisals.status,
-    })
-    .from(tradeInAppraisals)
-    .leftJoin(customers, eq(tradeInAppraisals.customerId, customers.id))
-    .orderBy(tradeInAppraisals.createdAt);
+  const tradeInDocs = await TradeInAppraisal.find({})
+    .select("customerId deviceBrand deviceModel aiOfferedPrice status")
+    .sort({ createdAt: 1 })
+    .lean();
+  const customerIds = [...new Set(tradeInDocs.map((t) => t.customerId).filter(Boolean))];
+  const customerDocs = customerIds.length
+    ? await Customer.find({ _id: { $in: customerIds } }).select("fullName").lean()
+    : [];
+  const customerNameById = new Map(customerDocs.map((c) => [c.id, c.fullName]));
+  const tradeIns = tradeInDocs.map((t) => ({
+    id: t.id,
+    customerName: customerNameById.get(t.customerId) ?? null,
+    deviceBrand: t.deviceBrand,
+    deviceModel: t.deviceModel,
+    aiOfferedPrice: t.aiOfferedPrice ?? null,
+    status: t.status,
+  }));
 
   return (
     <>

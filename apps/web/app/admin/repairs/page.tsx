@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { db, repairTickets, customers, eq } from "@cellphonelt/db";
+import { RepairTicket, Customer } from "@cellphonelt/db";
 import { DataTable } from "@/components/admin/ui/DataTable";
 import { StatusBadge } from "@/components/admin/ui/StatusBadge";
 import DeleteRepairButton from "./DeleteRepairButton";
@@ -9,18 +9,23 @@ export const metadata: Metadata = { title: "Phiếu sửa chữa" };
 export const dynamic = "force-dynamic";
 
 export default async function AdminRepairsPage() {
-  const tickets = await db
-    .select({
-      id: repairTickets.id,
-      customerName: customers.fullName,
-      deviceModel: repairTickets.deviceModel,
-      reportedIssue: repairTickets.reportedIssue,
-      status: repairTickets.status,
-      priority: repairTickets.priority,
-    })
-    .from(repairTickets)
-    .leftJoin(customers, eq(repairTickets.customerId, customers.id))
-    .orderBy(repairTickets.createdAt);
+  const ticketDocs = await RepairTicket.find({})
+    .select("customerId deviceModel reportedIssue status priority")
+    .sort({ createdAt: 1 })
+    .lean();
+  const customerIds = [...new Set(ticketDocs.map((t) => t.customerId).filter(Boolean))];
+  const customerDocs = customerIds.length
+    ? await Customer.find({ _id: { $in: customerIds } }).select("fullName").lean()
+    : [];
+  const customerNameById = new Map(customerDocs.map((c) => [c.id, c.fullName]));
+  const tickets = ticketDocs.map((t) => ({
+    id: t.id,
+    customerName: customerNameById.get(t.customerId) ?? null,
+    deviceModel: t.deviceModel,
+    reportedIssue: t.reportedIssue,
+    status: t.status,
+    priority: t.priority,
+  }));
 
   return (
     <>

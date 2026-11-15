@@ -1,6 +1,6 @@
 "use server";
 
-import { db, inventoryItems, eq } from "@cellphonelt/db";
+import { InventoryItem, TicketPart } from "@cellphonelt/db";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -38,7 +38,7 @@ export async function createInventoryAction(prevState: any, formData: FormData) 
       };
     }
 
-    await db.insert(inventoryItems).values(parsed.data as any);
+    await InventoryItem.create(parsed.data as any);
 
   } catch (error: any) {
     console.error("Create Inventory Error:", error);
@@ -51,7 +51,11 @@ export async function createInventoryAction(prevState: any, formData: FormData) 
 
 export async function deleteInventoryAction(id: string) {
   try {
-    await db.delete(inventoryItems).where(eq(inventoryItems.id, id));
+    // Postgres FK ticket_parts.item_id (no action) refused deleting a used item.
+    if (await TicketPart.exists({ itemId: id })) {
+      throw new Error("Inventory item is referenced by repair ticket parts");
+    }
+    await InventoryItem.deleteOne({ _id: id });
     revalidatePath("/admin/inventory");
     return { success: true };
   } catch (error) {
@@ -82,7 +86,8 @@ export async function updateInventoryAction(id: string, prevState: any, formData
       };
     }
 
-    await db.update(inventoryItems).set(parsed.data as any).where(eq(inventoryItems.id, id));
+    // Undefined (empty optional) fields are skipped, as Drizzle's .set() did.
+    await InventoryItem.updateOne({ _id: id }, { $set: parsed.data as any }, { runValidators: true });
 
   } catch (error: any) {
     console.error("Update Inventory Error:", error);

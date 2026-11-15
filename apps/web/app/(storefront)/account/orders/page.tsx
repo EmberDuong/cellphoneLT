@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { db, eq, desc, orders } from "@cellphonelt/db";
+import { Order } from "@cellphonelt/db";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -32,11 +32,7 @@ export default async function OrdersPage() {
 
   const customerId = (session.user as any).id as string;
 
-  const myOrders = await db
-    .select()
-    .from(orders)
-    .where(eq(orders.customerId, customerId))
-    .orderBy(desc(orders.createdAt));
+  const myOrders = await Order.find({ customerId }).sort({ createdAt: -1 }).lean();
 
   return (
     <main className="section-inner" style={{ padding: "3rem 1.5rem", maxWidth: 900 }}>

@@ -2,14 +2,21 @@ import { openai } from "@ai-sdk/openai";
 import { streamText, tool } from "ai";
 import { z } from "zod";
 import {
-  db, orders, products, inventoryItems, customers,
-  orderItems, brands, categories, repairTickets,
-  desc, eq, sql, ilike, and, or, gte, lte,
+  Order, Product, InventoryItem, Customer,
+  Brand, Category, RepairTicket,
+  ilike, iequals, plain,
 } from "@cellphonelt/db";
 import { estimateDelivery } from "@/lib/delivery";
 import { sendOrderStatusEmail } from "@/lib/email";
 
 export const maxDuration = 60;
+
+/** Map customerId -> customer (lean) for the given rows — replaces LEFT JOIN customers. */
+async function customersById(customerIds: (string | null | undefined)[]) {
+  const ids = [...new Set(customerIds.filter(Boolean))] as string[];
+  const list = ids.length ? await Customer.find({ _id: { $in: ids } }).lean() : [];
+  return new Map(list.map((c) => [c.id, c]));
+}
 
 export async function POST(req: Request) {
   const { messages } = await req.json();
@@ -45,23 +52,20 @@ export async function POST(req: Request) {
           limit: z.number().optional().default(15),
         }),
         execute: async ({ limit, status }) => {
-          const rows = await db.select({
-            id: orders.id,
-            status: orders.status,
-            totalAmount: orders.totalAmount,
-            paymentMethod: orders.paymentMethod,
-            paymentStatus: orders.paymentStatus,
-            shippingAddress: orders.shippingAddress,
-            createdAt: orders.createdAt,
-            customerName: customers.fullName,
-            customerEmail: customers.email,
-            customerPhone: customers.phoneNumber,
-          })
-            .from(orders)
-            .leftJoin(customers, eq(orders.customerId, customers.id))
-            .where(eq(orders.status, status ?? "pending"))
-            .orderBy(desc(orders.createdAt))
-            .limit(limit ?? 15);
+          const orderDocs = await Order.find({ status: status ?? "pending" })
+            .sort({ createdAt: -1 })
+            .limit(limit ?? 15)
+            .lean();
+          const custMap = await customersById(orderDocs.map((o) => o.customerId));
+          const rows = orderDocs.map((o) => {
+            const c = custMap.get(o.customerId);
+            return {
+              ...o,
+              customerName: c?.fullName ?? null,
+              customerEmail: c?.email ?? null,
+              customerPhone: c?.phoneNumber ?? null,
+            };
+          });
 
           return rows.map((o) => ({
             id: o.id,
@@ -89,22 +93,23 @@ export async function POST(req: Request) {
           estimatedDeliveryDays: z.number().optional(),
         }),
         execute: async ({ orderId, newStatus, estimatedDeliveryDays }) => {
-          const orderRows = await db.select({
-            id: orders.id,
-            status: orders.status,
-            shippingAddress: orders.shippingAddress,
-            customerName: customers.fullName,
-            customerEmail: customers.email,
-          })
-            .from(orders)
-            .leftJoin(customers, eq(orders.customerId, customers.id))
-            .where(eq(orders.id, orderId));
+          const orderDoc = await Order.findOne({ _id: orderId }).lean();
+          const orderCustomer = orderDoc ? await Customer.findOne({ _id: orderDoc.customerId }).lean() : null;
+          const orderRows = orderDoc
+            ? [{
+                id: orderDoc.id,
+                status: orderDoc.status,
+                shippingAddress: orderDoc.shippingAddress,
+                customerName: orderCustomer?.fullName ?? null,
+                customerEmail: orderCustomer?.email ?? null,
+              }]
+            : [];
 
           if (!orderRows.length) return { success: false, reason: `Không tìm thấy đơn hàng ${orderId}` };
           const order = orderRows[0];
           const oldStatus = order.status;
 
-          await db.update(orders).set({ status: newStatus, updatedAt: new Date() } as any).where(eq(orders.id, orderId));
+          await Order.updateOne({ _id: orderId }, { $set: { status: newStatus } });
 
           if (order.customerEmail) {
             await sendOrderStatusEmail(order.customerEmail, {
@@ -131,7 +136,7 @@ export async function POST(req: Request) {
           const failed: string[] = [];
           for (const id of orderIds) {
             try {
-              await db.update(orders).set({ status: newStatus, updatedAt: new Date() } as any).where(eq(orders.id, id));
+              await Order.updateOne({ _id: id }, { $set: { status: newStatus } });
               successCount++;
             } catch {
               failed.push(id.slice(0, 8).toUpperCase());
@@ -168,20 +173,26 @@ export async function POST(req: Request) {
         description: "Tóm tắt kho hàng: tổng số, sắp hết hàng, phân tích theo sản phẩm.",
         parameters: z.object({ lowStockThreshold: z.number().optional().default(5) }),
         execute: async ({ lowStockThreshold }) => {
-          const totalResult = await db.select({
-            total: sql<number>`COALESCE(SUM(${inventoryItems.quantity}), 0)`,
-          }).from(inventoryItems).where(eq(inventoryItems.stockStatus, "available"));
+          const totalResult = await InventoryItem.aggregate([
+            { $match: { stockStatus: "available" } },
+            { $group: { _id: null, total: { $sum: "$quantity" } } },
+          ]);
 
-          const lowStockRows = await db.select({
-            productName: products.name,
-            totalQty: sql<number>`SUM(${inventoryItems.quantity})`,
-            productId: inventoryItems.productId,
-          })
-            .from(inventoryItems)
-            .leftJoin(products, eq(inventoryItems.productId, products.id))
-            .where(eq(inventoryItems.stockStatus, "available"))
-            .groupBy(inventoryItems.productId, products.name)
-            .having(sql`SUM(${inventoryItems.quantity}) < ${lowStockThreshold ?? 5}`);
+          // Sum available quantity per product, keep products below the threshold
+          const lowStockRows = plain<any[]>(await InventoryItem.aggregate([
+            { $match: { stockStatus: "available" } },
+            { $group: { _id: "$productId", totalQty: { $sum: "$quantity" } } },
+            { $match: { totalQty: { $lt: lowStockThreshold ?? 5 } } },
+            { $lookup: { from: Product.collection.name, localField: "_id", foreignField: "_id", as: "product" } },
+            {
+              $project: {
+                _id: 0,
+                productId: "$_id",
+                totalQty: 1,
+                productName: { $ifNull: [{ $arrayElemAt: ["$product.name", 0] }, null] },
+              },
+            },
+          ]));
 
           return {
             totalInventoryItems: Number(totalResult[0]?.total ?? 0),
@@ -208,10 +219,10 @@ export async function POST(req: Request) {
         }),
         execute: async ({ productId, quantity, costPrice, conditionGrade, warehouseLocation, imeiSerial, notes }) => {
           // Verify product exists
-          const prod = await db.query.products.findFirst({ where: eq(products.id, productId) });
+          const prod = await Product.findOne({ _id: productId }).lean();
           if (!prod) return { success: false, reason: `Không tìm thấy sản phẩm ID: ${productId}` };
 
-          const [newItem] = await db.insert(inventoryItems).values({
+          const newItem = await InventoryItem.create({
             productId,
             quantity,
             costPrice: costPrice ?? null,
@@ -220,7 +231,7 @@ export async function POST(req: Request) {
             imeiSerial: imeiSerial ?? null,
             notes: notes ?? null,
             stockStatus: "available",
-          } as any).returning();
+          });
 
           return { success: true, itemId: newItem.id, productName: prod.name, quantity, message: `Đã thêm ${quantity} sản phẩm "${prod.name}" vào kho.` };
         },
@@ -251,21 +262,21 @@ export async function POST(req: Request) {
               if (!row.productName?.trim()) { skipped++; continue; }
 
               // Try to find existing product by ID or name
-              let product = row.productId
-                ? await db.query.products.findFirst({ where: eq(products.id, row.productId) })
-                : await db.query.products.findFirst({ where: ilike(products.name, row.productName.trim()) });
+              let product: { id: string } | null = row.productId
+                ? await Product.findOne({ _id: row.productId }).lean()
+                : await Product.findOne({ name: iequals(row.productName.trim()) }).lean();
 
               if (!product) {
                 // Find or create category
                 let catId: string | null = null;
                 if (row.category) {
-                  let cat = await db.query.categories.findFirst({ where: ilike(categories.name, row.category.trim()) });
+                  let cat: { id: string } | null = await Category.findOne({ name: iequals(row.category.trim()) }).lean();
                   if (!cat) {
-                    const [newCat] = await db.insert(categories).values({
+                    const newCat = await Category.create({
                       name: row.category.trim(),
                       slug: row.category.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-                    } as any).returning();
-                    cat = newCat;
+                    });
+                    cat = { id: newCat.id };
                   }
                   catId = cat?.id ?? null;
                 }
@@ -277,34 +288,34 @@ export async function POST(req: Request) {
                   .replace(/[ùúûü]/g, "u").replace(/[^a-z0-9]+/g, "-")
                   .replace(/^-|-$/g, "") + "-" + Date.now();
 
-                const [newProduct] = await db.insert(products).values({
+                const newProduct = await Product.create({
                   name: row.productName.trim(),
                   slug,
-                  basePrice: row.price ? row.price.toString() : null,
+                  basePrice: row.price ? row.price : null,
                   categoryId: catId,
                   images: row.imageLink ? [row.imageLink] : [],
                   status: "active",
                   aiSpecs: row.description ? { description: row.description } : null,
-                } as any).returning();
-                product = newProduct;
+                });
+                product = { id: newProduct.id };
                 created++;
               } else {
                 // Update price if provided
                 if (row.price) {
-                  await db.update(products).set({ basePrice: row.price.toString(), updatedAt: new Date() } as any).where(eq(products.id, product.id));
+                  await Product.updateOne({ _id: product.id }, { $set: { basePrice: row.price } });
                 }
                 updated++;
               }
 
               // Add inventory stock
               if ((row.stockLevel ?? 0) > 0) {
-                await db.insert(inventoryItems).values({
+                await InventoryItem.create({
                   productId: product.id,
                   quantity: row.stockLevel ?? 1,
                   costPrice: row.cost ? row.cost.toString() : null,
                   stockStatus: "available",
                   conditionGrade: "new",
-                } as any);
+                });
               }
             } catch (err: any) {
               errors.push(`"${row.productName}": ${err?.message ?? "Lỗi không xác định"}`);
@@ -333,29 +344,41 @@ export async function POST(req: Request) {
           limit: z.number().optional().default(10),
         }),
         execute: async ({ keyword, status, limit }) => {
-          const conditions: any[] = [];
-          if (keyword) conditions.push(ilike(products.name, `%${keyword}%`));
-          if (status) conditions.push(eq(products.status, status));
+          const filter: Record<string, any> = {};
+          if (keyword) filter.name = ilike(keyword);
+          if (status) filter.status = status;
 
-          const rows = await db.select({
-            id: products.id,
-            name: products.name,
-            slug: products.slug,
-            sku: products.sku,
-            basePrice: products.basePrice,
-            status: products.status,
-            brandName: brands.name,
-            categoryName: categories.name,
-            stock: sql<number>`COALESCE(SUM(CASE WHEN ${inventoryItems.stockStatus} = 'available' THEN ${inventoryItems.quantity} ELSE 0 END), 0)`,
-          })
-            .from(products)
-            .leftJoin(brands, eq(products.brandId, brands.id))
-            .leftJoin(categories, eq(products.categoryId, categories.id))
-            .leftJoin(inventoryItems, eq(inventoryItems.productId, products.id))
-            .where(conditions.length > 0 ? and(...conditions) : undefined)
-            .groupBy(products.id, brands.name, categories.name)
-            .orderBy(desc(products.createdAt))
-            .limit(limit ?? 10);
+          // Products + brand/category names + sum of "available" inventory quantity
+          const rows = plain<any[]>(await Product.aggregate([
+            { $match: filter },
+            { $sort: { createdAt: -1 } },
+            { $limit: limit ?? 10 },
+            { $lookup: { from: Brand.collection.name, localField: "brandId", foreignField: "_id", as: "brand" } },
+            { $lookup: { from: Category.collection.name, localField: "categoryId", foreignField: "_id", as: "category" } },
+            {
+              $lookup: {
+                from: InventoryItem.collection.name,
+                let: { pid: "$_id" },
+                pipeline: [
+                  { $match: { $expr: { $and: [{ $eq: ["$productId", "$$pid"] }, { $eq: ["$stockStatus", "available"] }] } } },
+                  { $group: { _id: null, total: { $sum: "$quantity" } } },
+                ],
+                as: "stockAgg",
+              },
+            },
+            {
+              $project: {
+                name: 1,
+                slug: 1,
+                sku: 1,
+                basePrice: 1,
+                status: 1,
+                brandName: { $ifNull: [{ $arrayElemAt: ["$brand.name", 0] }, null] },
+                categoryName: { $ifNull: [{ $arrayElemAt: ["$category.name", 0] }, null] },
+                stock: { $ifNull: [{ $arrayElemAt: ["$stockAgg.total", 0] }, 0] },
+              },
+            },
+          ]));
 
           return rows.map((p) => ({
             id: p.id,
@@ -382,23 +405,24 @@ export async function POST(req: Request) {
           maxPrice: z.number().optional(),
         }),
         execute: async ({ productId, status, name, basePrice, minPrice, maxPrice }) => {
-          const prod = await db.query.products.findFirst({ where: eq(products.id, productId) });
+          const prod = await Product.findOne({ _id: productId }).lean();
           if (!prod) return { success: false, reason: `Không tìm thấy sản phẩm ID: ${productId}` };
 
-          const updates: Record<string, any> = { updatedAt: new Date() };
+          const updates: Record<string, any> = {};
           if (status) updates.status = status;
           if (name) updates.name = name;
-          if (basePrice !== undefined) updates.basePrice = basePrice.toString();
-          if (minPrice !== undefined) updates.minPrice = minPrice.toString();
-          if (maxPrice !== undefined) updates.maxPrice = maxPrice.toString();
+          if (basePrice !== undefined) updates.basePrice = basePrice;
+          if (minPrice !== undefined) updates.minPrice = minPrice;
+          if (maxPrice !== undefined) updates.maxPrice = maxPrice;
 
-          await db.update(products).set(updates as any).where(eq(products.id, productId));
+          // updatedAt is maintained by Mongoose timestamps
+          await Product.updateOne({ _id: productId }, { $set: updates });
 
           return {
             success: true,
             productId,
             productName: name ?? prod.name,
-            changes: updates,
+            changes: { updatedAt: new Date(), ...updates },
             message: `Đã cập nhật sản phẩm "${name ?? prod.name}" thành công.`,
           };
         },
@@ -420,11 +444,11 @@ export async function POST(req: Request) {
           let brandId: string | null = null;
 
           if (categoryName) {
-            const cat = await db.query.categories.findFirst({ where: ilike(categories.name, `%${categoryName}%`) });
+            const cat = await Category.findOne({ name: ilike(categoryName) }).lean();
             catId = cat?.id ?? null;
           }
           if (brandName) {
-            const br = await db.query.brands.findFirst({ where: ilike(brands.name, `%${brandName}%`) });
+            const br = await Brand.findOne({ name: ilike(brandName) }).lean();
             brandId = br?.id ?? null;
           }
 
@@ -434,16 +458,16 @@ export async function POST(req: Request) {
             .replace(/[ùúûü]/g, "u").replace(/[^a-z0-9]+/g, "-")
             .replace(/^-|-$/g, "") + "-" + Date.now();
 
-          const [newProduct] = await db.insert(products).values({
+          const newProduct = await Product.create({
             name: name.trim(),
             slug,
-            basePrice: basePrice ? basePrice.toString() : null,
+            basePrice: basePrice ? basePrice : null,
             categoryId: catId,
             brandId: brandId,
             status: status ?? "draft",
             aiSpecs: description ? { description } : null,
             images: [],
-          } as any).returning();
+          });
 
           return { success: true, productId: newProduct.id, name: newProduct.name, status: newProduct.status, slug: newProduct.slug };
         },
@@ -457,25 +481,20 @@ export async function POST(req: Request) {
           limit: z.number().optional().default(10),
         }),
         execute: async ({ status, limit }) => {
-          const rows = await db.select({
-            id: repairTickets.id,
-            status: repairTickets.status,
-            priority: repairTickets.priority,
-            deviceBrand: repairTickets.deviceBrand,
-            deviceModel: repairTickets.deviceModel,
-            reportedIssue: repairTickets.reportedIssue,
-            estimatedCost: repairTickets.estimatedCost,
-            technicianNotes: repairTickets.technicianNotes,
-            createdAt: repairTickets.createdAt,
-            customerName: customers.fullName,
-            customerPhone: customers.phoneNumber,
-            customerEmail: customers.email,
-          })
-            .from(repairTickets)
-            .leftJoin(customers, eq(repairTickets.customerId, customers.id))
-            .where(status ? eq(repairTickets.status, status) : undefined)
-            .orderBy(desc(repairTickets.createdAt))
-            .limit(limit ?? 10);
+          const ticketDocs = await RepairTicket.find(status ? { status } : {})
+            .sort({ createdAt: -1 })
+            .limit(limit ?? 10)
+            .lean();
+          const custMap = await customersById(ticketDocs.map((t) => t.customerId));
+          const rows = ticketDocs.map((t) => {
+            const c = custMap.get(t.customerId);
+            return {
+              ...t,
+              customerName: c?.fullName ?? null,
+              customerPhone: c?.phoneNumber ?? null,
+              customerEmail: c?.email ?? null,
+            };
+          });
 
           return rows.map((t) => ({
             id: t.id,
@@ -504,19 +523,19 @@ export async function POST(req: Request) {
           finalCost: z.number().optional(),
         }),
         execute: async ({ ticketId, status, technicianNotes, estimatedCost, finalCost }) => {
-          const ticket = await db.query.repairTickets.findFirst({ where: eq(repairTickets.id, ticketId) });
+          const ticket = await RepairTicket.findOne({ _id: ticketId }).lean();
           if (!ticket) return { success: false, reason: `Không tìm thấy phiếu ${ticketId}` };
 
-          const updates: Record<string, any> = { updatedAt: new Date() };
+          const updates: Record<string, any> = {};
           if (status) updates.status = status;
           if (technicianNotes) updates.technicianNotes = technicianNotes;
-          if (estimatedCost !== undefined) updates.estimatedCost = estimatedCost.toString();
+          if (estimatedCost !== undefined) updates.estimatedCost = estimatedCost;
           if (finalCost !== undefined) {
-            updates.finalCost = finalCost.toString();
+            updates.finalCost = finalCost;
             if (status === "done") updates.completedAt = new Date();
           }
 
-          await db.update(repairTickets).set(updates as any).where(eq(repairTickets.id, ticketId));
+          await RepairTicket.updateOne({ _id: ticketId }, { $set: updates });
 
           return { success: true, ticketId, shortId: ticketId.slice(0, 8).toUpperCase(), changes: Object.keys(updates).filter(k => k !== "updatedAt"), message: `Đã cập nhật phiếu sửa chữa #${ticketId.slice(0, 8).toUpperCase()}.` };
         },
@@ -530,28 +549,28 @@ export async function POST(req: Request) {
           limit: z.number().optional().default(10),
         }),
         execute: async ({ query, limit }) => {
-          const conditions = query ? or(
-            ilike(customers.fullName, `%${query}%`),
-            ilike(customers.phoneNumber, `%${query}%`),
-            ilike(customers.email, `%${query}%`),
-          ) : undefined;
+          const filter = query
+            ? { $or: [
+                { fullName: ilike(query) },
+                { phoneNumber: ilike(query) },
+                { email: ilike(query) },
+              ] }
+            : {};
 
-          const rows = await db.select({
-            id: customers.id,
-            fullName: customers.fullName,
-            email: customers.email,
-            phoneNumber: customers.phoneNumber,
-            loyaltyPoints: customers.loyaltyPoints,
-            totalLifetimeSpend: customers.totalLifetimeSpend,
-            createdAt: customers.createdAt,
-            orderCount: sql<number>`COUNT(DISTINCT ${orders.id})`,
-          })
-            .from(customers)
-            .leftJoin(orders, eq(orders.customerId, customers.id))
-            .where(conditions)
-            .groupBy(customers.id)
-            .orderBy(desc(customers.createdAt))
-            .limit(limit ?? 10);
+          const customerDocs = await Customer.find(filter)
+            .sort({ createdAt: -1 })
+            .limit(limit ?? 10)
+            .lean();
+
+          // Order count per customer (replaces LEFT JOIN orders + COUNT(DISTINCT orders.id))
+          const counts = customerDocs.length
+            ? await Order.aggregate([
+                { $match: { customerId: { $in: customerDocs.map((c) => c.id) } } },
+                { $group: { _id: "$customerId", orderCount: { $sum: 1 } } },
+              ])
+            : [];
+          const countMap = new Map<string, number>(counts.map((r: any) => [r._id, r.orderCount]));
+          const rows = customerDocs.map((c) => ({ ...c, orderCount: countMap.get(c.id) ?? 0 }));
 
           return rows.map((c) => ({
             id: c.id,
@@ -577,36 +596,38 @@ export async function POST(req: Request) {
           const startOfDay = new Date(targetDate); startOfDay.setHours(0, 0, 0, 0);
           const endOfDay   = new Date(targetDate); endOfDay.setHours(23, 59, 59, 999);
 
-          const [revenueRow] = await db.select({
-            revenue: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
-            orderCount: sql<number>`COUNT(*)`,
-          }).from(orders)
-            .where(and(
-              gte(orders.createdAt, startOfDay),
-              lte(orders.createdAt, endOfDay),
-              eq(orders.status, "delivered"),
-            ));
+          const [revenueRow] = await Order.aggregate([
+            { $match: { createdAt: { $gte: startOfDay, $lte: endOfDay }, status: "delivered" } },
+            { $group: { _id: null, revenue: { $sum: "$totalAmount" }, orderCount: { $sum: 1 } } },
+          ]);
 
-          const [pendingRow] = await db.select({
-            count: sql<number>`COUNT(*)`,
-          }).from(orders).where(eq(orders.status, "pending"));
+          const pendingRow = { count: await Order.countDocuments({ status: "pending" }) };
 
-          const [newOrderRow] = await db.select({
-            count: sql<number>`COUNT(*)`,
-          }).from(orders).where(and(
-            gte(orders.createdAt, startOfDay),
-            lte(orders.createdAt, endOfDay),
-          ));
+          const newOrderRow = {
+            count: await Order.countDocuments({ createdAt: { $gte: startOfDay, $lte: endOfDay } }),
+          };
 
-          const [repairRow] = await db.select({
-            open: sql<number>`COUNT(CASE WHEN ${repairTickets.status} NOT IN ('done', 'delivered', 'cancelled') THEN 1 END)`,
-            done: sql<number>`COUNT(CASE WHEN ${repairTickets.status} = 'done' THEN 1 END)`,
-          }).from(repairTickets);
+          const repairRow = {
+            open: await RepairTicket.countDocuments({ status: { $nin: ["done", "delivered", "cancelled"] } }),
+            done: await RepairTicket.countDocuments({ status: "done" }),
+          };
 
-          const [stockRow] = await db.select({
-            total: sql<number>`COALESCE(SUM(${inventoryItems.quantity}), 0)`,
-            lowCount: sql<number>`COUNT(DISTINCT CASE WHEN ${inventoryItems.quantity} <= 5 THEN ${inventoryItems.productId} END)`,
-          }).from(inventoryItems).where(eq(inventoryItems.stockStatus, "available"));
+          // Total available quantity + number of distinct products that have an
+          // available inventory item with quantity <= 5 (per item, as before)
+          const [stockAgg] = await InventoryItem.aggregate([
+            { $match: { stockStatus: "available" } },
+            {
+              $group: {
+                _id: null,
+                total: { $sum: "$quantity" },
+                lowIds: { $addToSet: { $cond: [{ $lte: ["$quantity", 5] }, "$productId", null] } },
+              },
+            },
+          ]);
+          const stockRow = {
+            total: stockAgg?.total ?? 0,
+            lowCount: (stockAgg?.lowIds ?? []).filter((x: any) => x != null).length,
+          };
 
           return {
             date: targetDate.toLocaleDateString("vi-VN"),

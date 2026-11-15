@@ -1,11 +1,11 @@
 "use server";
 
-import { db, orders, eq } from "@cellphonelt/db";
+import { Order } from "@cellphonelt/db";
 import { revalidatePath } from "next/cache";
 
 export async function updateOrderStatusAction(id: string, newStatus: string) {
   try {
-    await db.update(orders).set({ status: newStatus as any } as any).where(eq(orders.id, id));
+    await Order.updateOne({ _id: id }, { $set: { status: newStatus as any } }, { runValidators: true });
     revalidatePath(`/admin/orders/${id}`);
     revalidatePath("/admin/orders");
     return { success: true };
@@ -17,7 +17,7 @@ export async function updateOrderStatusAction(id: string, newStatus: string) {
 
 export async function updatePaymentStatusAction(id: string, newStatus: string) {
   try {
-    await db.update(orders).set({ paymentStatus: newStatus as any } as any).where(eq(orders.id, id));
+    await Order.updateOne({ _id: id }, { $set: { paymentStatus: newStatus as any } }, { runValidators: true });
     revalidatePath(`/admin/orders/${id}`);
     revalidatePath("/admin/orders");
     return { success: true };

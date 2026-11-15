@@ -5,13 +5,13 @@ dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 import * as bcrypt from "bcryptjs";
 
 async function main() {
-  const { db, eq, staff } = await import("@cellphonelt/db");
+  const { Staff, disconnectDB } = await import("@cellphonelt/db");
 
   const email = "admin@cellphonelt.com";
   const plainPassword = "admin";
 
   try {
-    const user = await db.query.staff.findFirst({ where: eq(staff.email, email) });
+    const user = await Staff.findOne({ email }).lean();
     if (user) {
       console.log("User found. Comparing password...");
       const match = await bcrypt.compare(plainPassword, user.passwordHash);
@@ -27,6 +27,7 @@ async function main() {
   } catch (err) {
     console.error("Error:", err);
   } finally {
+    await disconnectDB();
     process.exit(0);
   }
 }

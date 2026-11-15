@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Image from "next/image";
 import type { Metadata } from "next";
-import { db, products, brands, categories, eq } from "@cellphonelt/db";
+import { Product, Brand, Category } from "@cellphonelt/db";
 import { AddToCartButtons } from "@/components/storefront/AddToCartButtons";
 
 interface Props {
@@ -10,9 +10,7 @@ interface Props {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const product = await db.query.products.findFirst({
-    where: eq(products.slug, slug),
-  });
+  const product = await Product.findOne({ slug }).lean();
 
   if (!product) {
     return { title: "Không tìm thấy sản phẩm" };
@@ -29,23 +27,26 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ProductDetailsPage({ params }: Props) {
   const { slug } = await params;
 
-  const [product] = await db
-    .select({
-      id: products.id,
-      name: products.name,
-      slug: products.slug,
-      price: products.basePrice,
-      images: products.images,
-      aiSpecs: products.aiSpecs,
-      brand: brands.name,
-      category: categories.name,
-      status: products.status,
-    })
-    .from(products)
-    .leftJoin(brands, eq(products.brandId, brands.id))
-    .leftJoin(categories, eq(products.categoryId, categories.id))
-    .where(eq(products.slug, slug))
-    .limit(1);
+  const productDoc = await Product.findOne({ slug }).lean();
+  const [productBrand, productCategory] = await Promise.all([
+    productDoc?.brandId ? Brand.findOne({ _id: productDoc.brandId }).select("name").lean() : null,
+    productDoc?.categoryId
+      ? Category.findOne({ _id: productDoc.categoryId }).select("name").lean()
+      : null,
+  ]);
+  const product = productDoc
+    ? {
+        id: productDoc.id,
+        name: productDoc.name,
+        slug: productDoc.slug,
+        price: productDoc.basePrice ?? null,
+        images: productDoc.images,
+        aiSpecs: productDoc.aiSpecs,
+        brand: productBrand?.name ?? null,
+        category: productCategory?.name ?? null,
+        status: productDoc.status,
+      }
+    : undefined;
 
   if (!product || product.status !== "active") {
     notFound();

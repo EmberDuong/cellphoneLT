@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ProductCard } from "@/components/storefront/ProductCard";
-import { db, products, brands, categories, eq, desc, and } from "@cellphonelt/db";
+import { Product, Brand, Category } from "@cellphonelt/db";
 
 export const metadata: Metadata = {
   title: "Sản phẩm",
@@ -18,35 +18,35 @@ export default async function ProductsPage({
   const categoryFilter = params.category as string | undefined;
 
   // 1. Fetch categories & brands for sidebar
-  const allCategories = await db.select().from(categories).orderBy(categories.sortOrder);
-  const allBrands = await db.select().from(brands).orderBy(brands.name);
+  const allCategories = await Category.find().sort({ sortOrder: 1 }).lean();
+  const allBrands = await Brand.find().sort({ name: 1 }).lean();
 
-  // 2. Build where clause
-  const conditions = [eq(products.status, "active")];
-  
+  // 2. Build filter
+  const filter: Record<string, unknown> = { status: "active" };
+
   if (brandFilter) {
     const b = allBrands.find((br) => br.slug === brandFilter);
-    if (b) conditions.push(eq(products.brandId, b.id));
-  }
-  
-  if (categoryFilter) {
-    const c = allCategories.find((cat) => cat.slug === categoryFilter);
-    if (c) conditions.push(eq(products.categoryId, c.id));
+    if (b) filter.brandId = b.id;
   }
 
-  // 3. Fetch products
-  const productList = await db
-    .select({
-      id: products.id,
-      name: products.name,
-      slug: products.slug,
-      price: products.basePrice,
-      brand: brands.name,
-    })
-    .from(products)
-    .leftJoin(brands, eq(products.brandId, brands.id))
-    .where(and(...conditions))
-    .orderBy(desc(products.createdAt));
+  if (categoryFilter) {
+    const c = allCategories.find((cat) => cat.slug === categoryFilter);
+    if (c) filter.categoryId = c.id;
+  }
+
+  // 3. Fetch products (brand name joined in memory from allBrands)
+  const brandNameById = new Map(allBrands.map((b) => [b.id, b.name]));
+  const productDocs = await Product.find(filter)
+    .select("name slug basePrice brandId")
+    .sort({ createdAt: -1 })
+    .lean();
+  const productList = productDocs.map((p) => ({
+    id: p.id,
+    name: p.name,
+    slug: p.slug,
+    price: p.basePrice ?? null,
+    brand: (p.brandId && brandNameById.get(p.brandId)) || null,
+  }));
 
   return (
     <main className="section-inner" style={{ padding: "3rem 1.5rem" }}>

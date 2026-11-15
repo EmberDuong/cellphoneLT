@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db, orders, orderItems, customers, eq } from "@cellphonelt/db";
+import { Order, OrderItem, Customer } from "@cellphonelt/db";
 import { StatusBadge } from "@/components/admin/ui/StatusBadge";
 import OrderDetails from "./OrderDetails";
 
@@ -10,16 +10,14 @@ export default async function AdminOrderDetailsPage({ params }: { params: Promis
   const { id } = await params;
 
   // 1. Fetch Order
-  const orderArray = await db.select().from(orders).where(eq(orders.id, id));
-  if (orderArray.length === 0) return notFound();
-  const order = orderArray[0];
+  const order = await Order.findOne({ _id: id }).lean();
+  if (!order) return notFound();
 
   // 2. Fetch Customer
-  const customerArray = await db.select().from(customers).where(eq(customers.id, order.customerId));
-  const customer = customerArray.length > 0 ? customerArray[0] : null;
+  const customer = await Customer.findOne({ _id: order.customerId }).select("-passwordHash").lean();
 
   // 3. Fetch Items
-  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, id));
+  const items = await OrderItem.find({ orderId: id }).lean();
 
   return (
     <>

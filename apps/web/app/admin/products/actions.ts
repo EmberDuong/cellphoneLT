@@ -1,6 +1,6 @@
 "use server";
 
-import { db, products, eq } from "@cellphonelt/db";
+import { Product, InventoryItem, OrderItem } from "@cellphonelt/db";
 import { CreateProductSchema } from "@cellphonelt/shared-types";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -32,15 +32,15 @@ export async function createProductAction(prevState: any, formData: FormData) {
   }
 
   try {
-    await db.insert(products).values({
+    await Product.create({
       name: parsed.data.name,
       slug: parsed.data.slug,
       sku: parsed.data.sku || null,
       brandId: parsed.data.brandId || null,
       categoryId: parsed.data.categoryId || null,
-      basePrice: parsed.data.basePrice.toString(),
-      minPrice: parsed.data.minPrice?.toString() || null,
-      maxPrice: parsed.data.maxPrice?.toString() || null,
+      basePrice: parsed.data.basePrice,
+      minPrice: parsed.data.minPrice ?? null,
+      maxPrice: parsed.data.maxPrice ?? null,
       status: parsed.data.status as "draft" | "active" | "archived",
       images: parsed.data.images,
     } as any);
@@ -83,18 +83,18 @@ export async function updateProductAction(id: string, prevState: any, formData: 
   }
 
   try {
-    await db.update(products).set({
+    await Product.updateOne({ _id: id }, { $set: {
       name: parsed.data.name,
       slug: parsed.data.slug,
       sku: parsed.data.sku || null,
       brandId: parsed.data.brandId || null,
       categoryId: parsed.data.categoryId || null,
-      basePrice: parsed.data.basePrice.toString(),
-      minPrice: parsed.data.minPrice?.toString() || null,
-      maxPrice: parsed.data.maxPrice?.toString() || null,
+      basePrice: parsed.data.basePrice,
+      minPrice: parsed.data.minPrice ?? null,
+      maxPrice: parsed.data.maxPrice ?? null,
       status: parsed.data.status as "draft" | "active" | "archived",
       images: parsed.data.images,
-    } as any).where(eq(products.id, id));
+    } as any });
   } catch (error: any) {
     console.error("Database error:", error);
     return {
@@ -109,7 +109,13 @@ export async function updateProductAction(id: string, prevState: any, formData: 
 
 export async function deleteProductAction(id: string) {
   try {
-    await db.delete(products).where(eq(products.id, id));
+    // Postgres FKs: inventory_items.product_id (no action → delete refused),
+    // order_items.product_id (on delete set null).
+    if (await InventoryItem.exists({ productId: id })) {
+      throw new Error("Product is referenced by inventory items");
+    }
+    await Product.deleteOne({ _id: id });
+    await OrderItem.updateMany({ productId: id }, { $set: { productId: null } });
     revalidatePath("/admin/products");
   } catch (error) {
     console.error("Delete error:", error);
@@ -119,7 +125,7 @@ export async function deleteProductAction(id: string) {
 
 export async function updateProductStatusAction(id: string, newStatus: string) {
   try {
-    await db.update(products).set({ status: newStatus as any } as any).where(eq(products.id, id));
+    await Product.updateOne({ _id: id }, { $set: { status: newStatus as any } }, { runValidators: true });
     revalidatePath("/admin/products");
     return { success: true };
   } catch (error: any) {

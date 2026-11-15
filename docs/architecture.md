@@ -1,7 +1,7 @@
 # CellphoneLT — Architecture & System Documentation
 
 > Last updated: 2026-05-19
-> Stack: Next.js 15 · Drizzle ORM · PostgreSQL · NextAuth v5 · Turborepo · pnpm
+> Stack: Next.js 15 · Mongoose · MongoDB · NextAuth v5 · Turborepo · pnpm
 
 ---
 
@@ -62,11 +62,11 @@ cellphoneLT/                        # Turborepo root
 │       └── scripts/                # Seed/utility scripts (ts-node)
 │
 ├── packages/
-│   ├── db/                         # @cellphonelt/db  — Drizzle ORM layer
-│   │   ├── schema/                 # Table definitions (one file per domain)
-│   │   ├── migrations/             # SQL migration files
+│   ├── db/                         # @cellphonelt/db  — Mongoose (MongoDB) layer
+│   │   ├── models/                 # Mongoose models (one file per domain)
+│   │   ├── connection.ts           # Cached MongoDB connection
 │   │   ├── scripts/                # seed.ts, seed-admin.ts
-│   │   └── index.ts                # Re-exports db client + all schema tables
+│   │   └── index.ts                # Re-exports connection helpers + all models
 │   │
 │   └── shared-types/               # @cellphonelt/shared-types — Zod schemas
 │       ├── product.schema.ts       # Product + AI specs validation
@@ -75,7 +75,7 @@ cellphoneLT/                        # Turborepo root
 │
 ├── turbo.json                      # Task pipeline config
 ├── package.json                    # Root — pnpm workspaces
-└── .env                            # DATABASE_URL, NEXTAUTH_SECRET, etc.
+└── .env                            # MONGODB_URI, AUTH_SECRET, etc.
 ```
 
 **Workspace packages:**
@@ -98,8 +98,8 @@ cellphoneLT/                        # Turborepo root
 | Animations | Framer Motion | PageTransition, ScrollReveal, FloatingElement |
 | Charts | Recharts | Admin dashboard |
 | Auth | NextAuth v5 (beta) | JWT, two credentials providers |
-| ORM | Drizzle ORM 0.38 | Type-safe SQL, no magic |
-| Database | PostgreSQL 16 | Via `postgres` driver (connection pool) |
+| ODM | Mongoose 8 | Models + schema validation, `.lean()` reads |
+| Database | MongoDB 7+ | String-UUID `_id`s, connection cached on `globalThis` |
 | Validation | Zod | Form input + AI spec schemas |
 | Excel import | xlsx | Bulk product import |
 | Monorepo | Turborepo + pnpm workspaces | Task caching, parallel builds |
@@ -296,7 +296,7 @@ All mutations use Next.js Server Actions (`"use server"`). The pattern is consis
 ```
 1. Parse FormData → Zod schema validation
 2. Return { error } on validation failure
-3. Execute DB operation via Drizzle
+3. Execute DB operation via Mongoose models
 4. revalidatePath() to bust Next.js cache
 5. redirect() to the list/detail page on success
 6. Catch DB errors → return { error: message }
@@ -365,16 +365,29 @@ All mutations use Next.js Server Actions (`"use server"`). The pattern is consis
 
 ## 8. Database Schema
 
-**Engine**: PostgreSQL 16 · **ORM**: Drizzle ORM · **Migrations**: Drizzle Kit
+**Engine**: MongoDB · **ODM**: Mongoose 8 · **Migrations**: none (indexes via `pnpm db:indexes`)
 
 ```
-packages/db/schema/
-├── index.ts            # Barrel export of all tables
-├── products.ts         # brands, categories, products, inventory_items
-├── customers.ts        # customers, staff
-├── orders.ts           # orders, order_items
-└── repair_tradein.ts   # repair_tickets, ticket_parts, trade_in_appraisals
+packages/db/
+├── index.ts            # connectDB/disconnectDB, plain(), ilike()/iequals() helpers, all models
+├── connection.ts       # Cached Mongoose connection (MONGODB_URI)
+├── plugins.ts          # UUID _id + lean plugin that maps _id → id
+└── models/
+    ├── lookup.ts       # Brand, Category, Staff
+    ├── customers.ts    # Customer
+    ├── products.ts     # Product
+    ├── inventory.ts    # InventoryItem
+    ├── orders.ts       # Order, OrderItem
+    ├── repair_tickets.ts # RepairTicket, TicketPart
+    ├── trade_ins.ts    # TradeInAppraisal
+    └── chats.ts        # ChatSession, ChatMessage
 ```
+
+> **Type mapping.** The tables below keep their original column names — each is now a MongoDB collection with the same
+> camelCase fields. `uuid PK` → string UUID `_id` (exposed as `id` on `.lean()` results); `uuid` FKs → string ids;
+> `decimal` money columns → `Number` (VND); `jsonb` → `Mixed` / sub-document; `timestamp` → `Date`
+> (`createdAt`/`updatedAt` maintained by Mongoose timestamps); Postgres enums → string fields with `enum` validation.
+> Unique nullable columns (customer email/phone, product SKU) use partial unique indexes.
 
 ### Entity Relationship Overview
 
@@ -647,14 +660,9 @@ intake → diagnosing → awaiting_parts → in_progress → quality_check → d
 
 ---
 
-### Migrations Log
+### Indexes
 
-| File | Content |
-|---|---|
-| `0000_dapper_phantom_reporter.sql` | Initial schema: brands, categories, products, inventory, repairs, trade-ins |
-| `0001_fancy_rafael_vega.sql` | orders, order_items, customers auth fields (passwordHash, emailVerified) |
-| `0002_furry_praxagora.sql` | Added `min_price`, `max_price` columns to products |
-| `0003_steep_thor.sql` | (Placeholder — no-op) |
+Indexes are declared on the Mongoose schemas and created with `pnpm db:indexes` (also run by `pnpm db:seed`).
 
 ---
 
@@ -740,9 +748,9 @@ Customer adds items → CartProvider (localStorage)
                               ↓
                    placeOrder() server action
                      ├── Validate stock availability
-                     ├── db.insert(orders)
-                     ├── db.insert(order_items) for each cart item
-                     ├── db.update(inventory_items) — deduct quantity
+                     ├── Order.create(...)
+                     ├── OrderItem.insertMany(...) for the cart items
+                     ├── InventoryItem.updateOne(...) — deduct quantity
                      │     └── if quantity ≤ 0 → set stockStatus = "sold"
                      └── redirect(/checkout/confirmation/[orderId])
                               ↓
@@ -757,7 +765,7 @@ Customer adds items → CartProvider (localStorage)
 registerCustomer() server action
   ├── Check email uniqueness in customers table
   ├── bcryptjs.hash(password, 12)
-  ├── db.insert(customers) — with passwordHash
+  ├── Customer.create(...) — with passwordHash
   └── signIn("customer-credentials") — auto login
         ↓
   redirect(/account)
@@ -772,7 +780,7 @@ authenticateStaff() server action
   └── signIn("staff-credentials", { email, password })
         ↓
 NextAuth authorize()
-  ├── db.query.staff.findFirst({ where: eq(staff.email, email) })
+  ├── Staff.findOne({ email }).lean()
   ├── bcryptjs.compare(password, passwordHash)
   ├── check isActive === true
   └── return { id, name, email, role: "staff" }
@@ -786,9 +794,9 @@ JWT written → cookie set → redirect(/admin/dashboard)
 Admin reviews trade-in appraisal
         ↓
 updateTradeInStatusAction(id, "accepted")
-  ├── db.update(trade_in_appraisals).set({ status: "accepted", acceptedAt: now })
+  ├── TradeInAppraisal.updateOne({ _id }, { $set: { status: "accepted", acceptedAt: now } })
   ├── Find matching product by deviceBrand + deviceModel (slug lookup)
-  └── db.insert(inventory_items) {
+  └── InventoryItem.create({
         productId:      matched product (or null if no match)
         tradeInId:      appraisal.id
         conditionGrade: "grade_b"       ← default assumption
@@ -850,7 +858,7 @@ DashboardCharts.tsx (client component)
     ├── Loop each row
     ├── Find/create brand slug
     ├── Find category by name
-    ├── db.insert(products) for each valid row
+    ├── Product.create(...) for each valid row
     └── revalidatePath("/admin/products")
 ```
 
@@ -911,10 +919,7 @@ These are larger form/detail components kept next to their route pages:
 ```json
 {
   "build":       { "dependsOn": ["^build"] },   // packages/db builds before apps/web
-  "dev":         { "cache": false, "persistent": true },
-  "db:generate": { "cache": false },
-  "db:migrate":  { "cache": false },
-  "db:studio":   { "cache": false, "persistent": true }
+  "dev":         { "cache": false, "persistent": true }
 }
 ```
 
@@ -924,16 +929,17 @@ These are larger form/detail components kept next to their route pages:
 |---|---|
 | `pnpm dev` | `turbo dev` — starts Next.js dev server (Turbopack) |
 | `pnpm build` | `turbo build` — production build of all packages |
-| `pnpm db:generate` | `drizzle-kit generate` — generate SQL migrations from schema changes |
-| `pnpm db:migrate` | `drizzle-kit migrate` — apply pending migrations to the database |
-| `pnpm db:studio` | `drizzle-kit studio` — open Drizzle Studio GUI |
+| `pnpm db:indexes` | Create/update MongoDB indexes for every model |
+| `pnpm db:seed` | Seed Super Admin (`admin@cellphonelt.com` / `password123`), brands, categories, sample products |
 
 ### Environment Variables (`.env`)
 
 | Variable | Used by | Purpose |
 |---|---|---|
-| `DATABASE_URL` | `packages/db` | PostgreSQL connection string |
-| `NEXTAUTH_SECRET` | `apps/web/lib/auth.ts` | JWT signing secret |
+| `MONGODB_URI` | `packages/db` | MongoDB connection string (default `mongodb://127.0.0.1:27017/cellphonelt`) |
+| `AUTH_SECRET` / `NEXTAUTH_SECRET` | `apps/web/lib/auth.ts` | JWT signing secret |
+| `OPENAI_API_KEY` | `app/api/chat/*` | Admin Copilot + customer chatbot |
+| `RESEND_API_KEY` | `lib/email.ts` | Order emails (skipped when unset) |
 | `NEXTAUTH_URL` | NextAuth | Canonical app URL |
 | `CLOUDINARY_CLOUD_NAME` | Image upload (Phase 2) | Cloudinary account |
 | `CLOUDINARY_API_KEY` | Image upload (Phase 2) | |
@@ -943,7 +949,8 @@ These are larger form/detail components kept next to their route pages:
 
 ### Next.js Config (`next.config.ts`)
 
-- `serverExternalPackages: ["postgres"]` — keep postgres driver server-only
+- Loads the repo-root `.env` (Next.js otherwise only reads `apps/web/.env*`)
+- `serverExternalPackages: ["mongoose"]` — keep the MongoDB driver server-only
 - Image domains: `res.cloudinary.com`, `lh3.googleusercontent.com`
 - Turbopack enabled for faster hot reload in development
 
@@ -970,7 +977,7 @@ These are larger form/detail components kept next to their route pages:
 | How orders are created | `apps/web/app/(storefront)/checkout/actions.ts` |
 | Admin route protection | `apps/web/middleware.ts` |
 | Auth providers | `apps/web/lib/auth.config.ts` |
-| Database tables | `packages/db/schema/*.ts` |
+| Database models | `packages/db/models/*.ts` |
 | Dashboard chart data | `apps/web/app/api/admin/metrics/route.ts` |
 | Cart state | `apps/web/components/storefront/CartProvider.tsx` |
 | Product validation schema | `packages/shared-types/product.schema.ts` |
@@ -978,4 +985,4 @@ These are larger form/detail components kept next to their route pages:
 | Repair status workflow | `apps/web/app/admin/repairs/actions.ts` |
 | Bulk product import | `apps/web/app/admin/products/import/` |
 | Admin sidebar navigation | `apps/web/components/admin/AdminSidebar.tsx` |
-| DB connection config | `packages/db/drizzle.config.ts` |
+| DB connection config | `packages/db/connection.ts` |

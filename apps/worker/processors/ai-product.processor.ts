@@ -1,7 +1,7 @@
 import { uploadAndRemoveBackground } from "@cellphonelt/ai-pipeline/image";
 import { analyseImage } from "@cellphonelt/ai-pipeline/vision";
 import { generateProductSpec } from "@cellphonelt/ai-pipeline/llm";
-import { db, products } from "@cellphonelt/db";
+import { Product } from "@cellphonelt/db";
 import type { AiPipelineJob } from "@cellphonelt/shared-types";
 
 /**
@@ -61,17 +61,14 @@ export async function processAiProductJob(
     .slice(0, 180)
     + "-" + Date.now().toString(36);
 
-  const [inserted] = await db
-    .insert(products)
-    .values({
-      name: aiSpecs.seoTitle,
-      slug,
-      basePrice: job.price.toString(),
-      images: [cleanUrl, originalUrl],
-      aiSpecs: aiSpecs as any,
-      status: "draft",
-    } as any)
-    .returning({ id: products.id });
+  const inserted = await Product.create({
+    name: aiSpecs.seoTitle,
+    slug,
+    basePrice: Number(job.price),
+    images: [cleanUrl, originalUrl],
+    aiSpecs: aiSpecs as any,
+    status: "draft",
+  });
 
   console.log(`[worker] Step 4 done. Product ID: ${inserted.id}`);
 

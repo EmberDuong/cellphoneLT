@@ -1,7 +1,13 @@
 "use server";
 
-import { db, products } from "@cellphonelt/db";
+import { Product } from "@cellphonelt/db";
 import { revalidatePath } from "next/cache";
+
+/** Excel cells arrive as strings/numbers; store prices as numbers (null when empty). */
+function toPrice(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  return Number(value);
+}
 
 export async function importProductsAction(data: any[]) {
   try {
@@ -13,15 +19,28 @@ export async function importProductsAction(data: any[]) {
     for (let i = 0; i < data.length; i += chunkSize) {
       const chunk = data.slice(i, i + chunkSize);
 
-      // Fix #8 — Use .returning() to count only actually-inserted rows,
-      // skipping silent slug conflicts instead of inflating the count.
-      const inserted = await db
-        .insert(products)
-        .values(chunk)
-        .onConflictDoNothing({ target: products.slug })
-        .returning({ id: products.id });
+      // Fix #8 — Count only actually-inserted rows, silently skipping slug
+      // conflicts (old ON CONFLICT (slug) DO NOTHING) instead of inflating the count.
+      const slugs = chunk.map((row: any) => row.slug);
+      const existing = await Product.find({ slug: { $in: slugs } }).select("slug").lean();
+      const taken = new Set(existing.map((p) => p.slug));
+      const toInsert = chunk
+        .filter((row: any) => {
+          if (taken.has(row.slug)) return false;
+          taken.add(row.slug); // also skip duplicates within the same chunk
+          return true;
+        })
+        .map((row: any) => ({
+          ...row,
+          basePrice: toPrice(row.basePrice),
+          minPrice: toPrice(row.minPrice),
+          maxPrice: toPrice(row.maxPrice),
+        }));
 
-      count += inserted.length;
+      if (toInsert.length > 0) {
+        const inserted = await Product.insertMany(toInsert);
+        count += inserted.length;
+      }
     }
 
     revalidatePath("/admin/products");

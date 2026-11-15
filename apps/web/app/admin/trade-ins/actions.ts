@@ -1,43 +1,42 @@
 "use server";
 
-import { db, tradeInAppraisals, inventoryItems, products, eq } from "@cellphonelt/db";
+import { TradeInAppraisal, InventoryItem, Product } from "@cellphonelt/db";
 import { revalidatePath } from "next/cache";
 
 export async function updateTradeInStatusAction(id: string, newStatus: string) {
   try {
-    await db.update(tradeInAppraisals).set({ status: newStatus as any } as any).where(eq(tradeInAppraisals.id, id));
+    await TradeInAppraisal.updateOne({ _id: id }, { $set: { status: newStatus as any } }, { runValidators: true });
 
     // Fix #6 — When a trade-in is accepted, automatically create an inventory item
     // for the acquired device so it appears in stock immediately.
     if (newStatus === "accepted") {
-      const [tradeIn] = await db.select().from(tradeInAppraisals).where(eq(tradeInAppraisals.id, id));
+      const tradeIn = await TradeInAppraisal.findOne({ _id: id }).lean();
 
       if (tradeIn) {
         // Try to find an existing product that matches the device model
-        const [matchedProduct] = await db
-          .select({ id: products.id })
-          .from(products)
-          .where(eq(products.slug, `${tradeIn.deviceBrand}-${tradeIn.deviceModel}`.toLowerCase().replace(/[^a-z0-9]+/g, "-")))
-          .limit(1);
+        const matchedProduct = await Product.findOne({
+          slug: `${tradeIn.deviceBrand}-${tradeIn.deviceModel}`.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        })
+          .select("_id")
+          .lean();
 
         // Only create inventory entry if we can link to a product
         if (matchedProduct) {
-          await db.insert(inventoryItems).values({
+          const agreedPrice = tradeIn.finalAgreedPrice ?? tradeIn.aiOfferedPrice ?? null;
+          await InventoryItem.create({
             productId: matchedProduct.id,
             imeiSerial: tradeIn.deviceImei ?? null,
             quantity: 1,
             conditionGrade: "grade_b" as const, // default to grade B for trade-ins
             stockStatus: "available" as const,
             tradeInId: id,
-            costPrice: tradeIn.finalAgreedPrice ?? tradeIn.aiOfferedPrice ?? null,
+            costPrice: agreedPrice != null ? String(agreedPrice) : null, // InventoryItem.costPrice stays a string
             notes: `Thu mua từ khách hàng – ${tradeIn.deviceBrand} ${tradeIn.deviceModel}`,
           } as any);
         }
 
         // Mark the accepted timestamp
-        await db.update(tradeInAppraisals)
-          .set({ acceptedAt: new Date() } as any)
-          .where(eq(tradeInAppraisals.id, id));
+        await TradeInAppraisal.updateOne({ _id: id }, { $set: { acceptedAt: new Date() } });
       }
     }
 
@@ -53,7 +52,7 @@ export async function updateTradeInStatusAction(id: string, newStatus: string) {
 
 export async function updateFinalPriceAction(id: string, price: number) {
   try {
-    await db.update(tradeInAppraisals).set({ finalAgreedPrice: price.toString() } as any).where(eq(tradeInAppraisals.id, id));
+    await TradeInAppraisal.updateOne({ _id: id }, { $set: { finalAgreedPrice: Number(price) } });
     revalidatePath(`/admin/trade-ins/${id}`);
     revalidatePath("/admin/trade-ins");
     return { success: true };
